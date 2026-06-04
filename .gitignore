@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/*.db
+open_vehicle.db
+logs/
+*.log
+.DS_Store

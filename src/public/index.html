@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Masim - Sistema de Gestión de Taller</title>
+  <meta name="description"
+    content="Masim: Sistema de gestión integral para talleres mecánicos de alto rendimiento. Control de recepciones, órdenes de trabajo, presupuestos y clientes.">
+  <link rel="stylesheet" href="/styles.css">
+  <!-- FontAwesome 6 para íconos premium -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+  <header class="topbar">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <button id="hamburgerBtn" class="hamburger-btn" aria-label="Abrir menú">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <div class="topbar-logo">
+        <i class="fa-solid fa-car-burst"></i>
+        <div class="topbar-logo-text">
+          <strong>Masim</strong>
+          <span>Taller de Alto Rendimiento</span>
+        </div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="topReceptionBtn" class="small hidden" data-tab="reception">
+        <i class="fa-solid fa-clipboard-check"></i> Registrar Recepción
+      </button>
+      <div id="userProfile" class="user-badge hidden">
+        <div id="userAvatar" class="user-badge-avatar">A</div>
+        <span id="userName" class="user-badge-name">Admin</span>
+      </div>
+      <button id="logoutBtn" class="secondary small hidden">
+        <i class="fa-solid fa-right-from-bracket"></i> Salir
+      </button>
+    </div>
+  </header>
+
+  <!-- OVERLAY PARA MENÚ MOBILE -->
+  <div id="mobileOverlay" class="mobile-overlay"></div>
+
+  <main>
+    <!-- VISTA DE LOGIN -->
+    <section id="loginView" class="login-wrapper">
+      <div id="loginCard" class="card narrow login-card">
+        <h1><i class="fa-solid fa-shield-halved"></i> Acceso al Sistema</h1>
+        <p class="login-subtitle">Ingresa tus credenciales para continuar</p>
+        <label>
+          <span><i class="fa-solid fa-envelope"></i> Correo Electrónico</span>
+          <input id="loginEmail" type="email" value="admin@masim.local" placeholder="ejemplo@masim.local">
+        </label>
+        <label>
+          <span><i class="fa-solid fa-lock"></i> Contraseña</span>
+          <div class="password-wrapper">
+            <input id="loginPassword" type="password" value="Admin123!" placeholder="••••••••">
+            <button id="togglePassword" type="button" class="password-toggle" tabindex="-1">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </label>
+        <button id="loginBtn" class="login-btn">
+          <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+        </button>
+        <div class="demo-info">
+          <p>
+            <i class="fa-solid fa-circle-info"></i> <strong>Cuentas demo:</strong><br>
+            Admin: admin@masim.local / Admin123!<br>
+            Mecánico: mecanico@masim.local / Mecanico123!
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- VISTA PRINCIPAL DE LA APP -->
+    <section id="appView" class="hidden grid">
+      <!-- SIDEBAR -->
+      <aside id="sidebarMenu" class="menu">
+        <div class="menu-mobile-header">
+          <strong>Menú</strong>
+          <button id="menuCloseBtn" class="menu-close-btn"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <button class="active" data-tab="dashboard">
+          <i class="fa-solid fa-gauge"></i> Dashboard
+        </button>
+        <button data-tab="reception">
+          <i class="fa-solid fa-clipboard-check"></i> Registrar Recepción
+        </button>
+        <button data-tab="customers">
+          <i class="fa-solid fa-user-tie"></i> Clientes
+        </button>
+        <button data-tab="vehicles">
+          <i class="fa-solid fa-car"></i> Vehículos
+        </button>
+        <button data-tab="orders">
+          <i class="fa-solid fa-receipt"></i> Órdenes de Trabajo
+          <span id="ordersBadge" class="menu-badge hidden">0</span>
+        </button>
+        <button data-tab="mechanic">
+          <i class="fa-solid fa-toolbox"></i> Mecánico
+        </button>
+        <button data-tab="catalog">
+          <i class="fa-solid fa-tags"></i> Catálogo
+        </button>
+        <button data-tab="billing">
+          <i class="fa-solid fa-file-invoice-dollar"></i> Facturación
+        </button>
+        <button data-tab="whatsapp">
+          <i class="fa-brands fa-whatsapp"></i> WhatsApp
+        </button>
+      </aside>
+
+      <!-- CONTENEDOR DE CONTENIDO -->
+      <section class="content">
+        <!-- Dashboard / Operación -->
+        <section id="dashboard" class="tab card">
+          <div class="dashboard-header">
+            <div class="dashboard-greeting">
+              <h1 id="dashboardGreeting"><i class="fa-solid fa-chart-simple"></i> Estado de la Operación</h1>
+              <p id="dashboardSubtitle">Resumen general del taller</p>
+            </div>
+            <div class="dashboard-date">
+              <span id="dashboardDate"></span>
+              <strong id="dashboardTime"></strong>
+            </div>
+          </div>
+          <button id="dashboardReceptionBtn" data-tab="reception" style="margin-bottom: 18px;">
+            <i class="fa-solid fa-plus"></i> Registrar nueva recepción
+          </button>
+          <div id="summary" class="cards">
+            <!-- Métricas dinámicas -->
+          </div>
+        </section>
+
+        <!-- Registrar Recepción -->
+        <section id="reception" class="tab card hidden">
+          <h1><i class="fa-solid fa-clipboard-check"></i> Registrar Recepción</h1>
+          <div class="wizard-grid">
+            <section class="wizard-block">
+              <h2>1. Cliente</h2>
+              <div id="rxExistingCustomerBox">
+                <div class="customer-picker">
+                  <label class="customer-search-label">
+                    <span class="customer-search-input"><i class="fa-solid fa-magnifying-glass"></i>
+                      <input id="rxCustomerSearch" placeholder="Buscar por nombre, teléfono, WhatsApp, email o RFC"
+                        autocomplete="off"></span>
+                  </label>
+                  <div id="rxCustomerOptions" class="customer-options"></div>
+                </div>
+              </div>
+              <div id="rxNewCustomerBox" class="hidden">
+                <div class="new-customer-panel">
+                  <div class="subsection-title">Cliente nuevo</div>
+                  <div class="form-row compact-row customer-main-row">
+                    <label><span>Tipo</span><select id="rxCustomerType">
+                        <option value="empresa">Empresa</option>
+                        <option value="particular">Particular</option>
+                      </select></label>
+                    <label><span><span id="rxCustomerNameLabel">Razón social</span><small id="rxBusinessNameHelp">(Igual
+                          a
+                          su constancia de situación fiscal)</small></span><input id="rxBusinessName"
+                        placeholder="Razón social exacta"></label>
+                  </div>
+                  <div class="subsection-title">Contacto</div>
+                  <div class="form-row compact-row">
+                    <label id="rxContactNameField"><span>Nombre de contacto</span><input id="rxContactName"
+                        placeholder="Contacto principal"></label>
+                    <label><span>Teléfono</span><input id="rxPhone" placeholder="Teléfono"></label>
+                    <label><span>WhatsApp</span><input id="rxWhatsapp" placeholder="WhatsApp"></label>
+                    <label><span>Email</span><input id="rxEmail" type="email" placeholder="correo@ejemplo.com"></label>
+                  </div>
+                  <div class="form-row compact-row address-fiscal-row">
+                    <label><span>Dirección</span><input id="rxAddress" placeholder="Dirección"></label>
+                    <button id="rxToggleFiscal" type="button" class="small fiscal-toggle"><i
+                        class="fa-solid fa-file-invoice"></i> Agregar datos fiscales</button>
+                  </div>
+                  <div id="rxFiscalBox" class="hidden">
+                    <div class="subsection-title">Datos fiscales opcionales</div>
+                    <div class="form-row compact-row">
+                      <label><span>RFC</span><input id="rxRfc" placeholder="RFC opcional"></label>
+                      <label><span>Código Postal</span><input id="rxPostalCode" placeholder="CP fiscal"></label>
+                      <label><span>Régimen Fiscal</span><input id="rxTaxRegime" placeholder="Ej. 601, 612"></label>
+                      <label><span>Uso del CFDI</span><input id="rxCfdiUse" placeholder="Ej. G03, P01"></label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="wizard-block">
+              <h2>2. Vehículo</h2>
+              <div id="rxExistingVehicleBox">
+                <div class="customer-picker vehicle-picker">
+                  <label class="customer-search-label">
+                    <span class="customer-search-input"><i class="fa-solid fa-magnifying-glass"></i>
+                      <input id="rxVehicleSearch" placeholder="Buscar por placas, marca, modelo, VIN o número económico"
+                        autocomplete="off"></span>
+                  </label>
+                  <div id="rxVehicleList" class="customer-options vehicle-options"></div>
+                </div>
+              </div>
+              <div id="rxNewVehicleBox" class="hidden">
+                <div class="new-customer-panel new-vehicle-panel">
+                  <div class="subsection-title">Vehículo nuevo</div>
+                  <div class="segmented">
+                    <label><input type="radio" name="rxVehicleInputMode" value="vin" checked> Por VIN/NIV</label>
+                    <label><input type="radio" name="rxVehicleInputMode" value="manual"> Manual</label>
+                  </div>
+                  <div id="rxVinBox">
+                    <label><span>VIN/NIV</span>
+                      <div style="display:flex; gap:8px;"><input id="rxVin" maxlength="17"
+                          style="text-transform:uppercase;"><button id="rxDecodeVin" class="secondary"><i
+                            class="fa-solid fa-magnifying-glass"></i></button></div>
+                    </label>
+                    <div id="rxVinSummary" class="summary-box hidden"></div>
+                  </div>
+                  <div id="rxManualBox" class="hidden">
+                    <div class="form-row compact-row">
+                      <label><span>Año</span><select id="rxRefYear"></select></label>
+                      <label><span>Marca</span><select id="rxRefMake" disabled></select></label>
+                      <label><span>Modelo</span><select id="rxRefModel" disabled></select></label>
+                      <label><span>Versión</span><select id="rxRefStyle" disabled></select></label>
+                    </div>
+                  </div>
+                  <div class="form-row compact-row">
+                    <label><span>Año</span><input id="rxVehicleYear"></label>
+                    <label><span>Marca</span><input id="rxVehicleMake"></label>
+                    <label><span>Modelo</span><input id="rxVehicleModel"></label>
+                    <label><span>Versión</span><input id="rxVehicleTrim"></label>
+                    <label><span>Placas</span><input id="rxPlates"></label>
+                    <label><span>Kilometraje</span><input id="rxMileage" type="number"></label>
+                    <label><span>Número económico</span><input id="rxEconomicNumber" placeholder="Opcional"></label>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="wizard-block">
+              <h2>3. Recepción</h2>
+              <div class="form-row reception-row">
+                <label class="full-row"><span>Síntoma reportado</span><textarea id="rxSymptom" rows="3"
+                    placeholder="Falla, solicitud del cliente o motivo de ingreso"></textarea></label>
+                <label><span>Nivel de combustible</span><select id="rxFuel">
+                    <option value="">Seleccionar...</option>
+                    <option value="Vacio">Vacío</option>
+                    <option value="Reserva">Reserva</option>
+                    <option value="1/4">1/4</option>
+                    <option value="1/2">1/2</option>
+                    <option value="3/4">3/4</option>
+                    <option value="Lleno">Lleno</option>
+                  </select></label>
+              </div>
+              <div class="form-row reception-row two-columns">
+                <label><span>Inventario / objetos</span><input id="rxInventory"
+                    placeholder="Gato, refacción, herramientas"></label>
+                <label><span>Observaciones</span><input id="rxObservations"
+                    placeholder="Golpes, rayones, notas"></label>
+              </div>
+              <button id="rxCreateReception"><i class="fa-solid fa-folder-plus"></i> Crear recepción</button>
+            </section>
+          </div>
+        </section>
+
+        <!-- Clientes -->
+        <section id="customers" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-solid fa-user-group"></i> Directorio de Clientes</h1>
+            </div>
+            <button id="openCustomerModal"><i class="fa-solid fa-user-plus"></i> Registrar cliente</button>
+          </div>
+          <div id="customersList" class="list" style="margin-top: 12px;"></div>
+        </section>
+
+        <div id="customerModalOverlay" class="modal-overlay hidden">
+          <div class="modal-card customer-modal" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
+            <div class="modal-header">
+              <div>
+                <h2 id="customerModalTitle"><i class="fa-solid fa-user-plus"></i> Registrar cliente</h2>
+                <p class="muted">Captura los datos principales y fiscales del cliente.</p>
+              </div>
+              <button id="closeCustomerModal" type="button" class="icon-button" aria-label="Cerrar modal"><i
+                  class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="new-customer-panel modal-form-panel">
+              <div class="subsection-title">Cliente</div>
+              <div class="form-row compact-row customer-main-row">
+                <label><span>Tipo</span><select id="customerType">
+                    <option value="empresa">Empresa</option>
+                    <option value="particular">Particular</option>
+                  </select></label>
+                <label><span><span id="customerNameLabel">Razón social</span><small id="customerBusinessNameHelp">(Igual
+                      a su constancia de situación fiscal)</small></span><input id="customerName"
+                    placeholder="Razón social exacta"></label>
+              </div>
+              <div class="subsection-title">Contacto</div>
+              <div class="form-row compact-row">
+                <label id="customerContactField"><span>Nombre de contacto</span><input id="customerContact"
+                    placeholder="Contacto principal"></label>
+                <label><span>Teléfono</span><input id="customerPhone" placeholder="Teléfono de contacto"></label>
+                <label><span>WhatsApp</span><input id="customerWhatsapp" placeholder="WhatsApp"></label>
+                <label><span>Correo electrónico</span><input id="customerEmail" type="email"
+                    placeholder="correo@ejemplo.com"></label>
+              </div>
+              <div class="form-row compact-row address-fiscal-row">
+                <label><span>Dirección</span><input id="customerAddress" placeholder="Dirección del domicilio"></label>
+                <button id="toggleCustomerFiscal" type="button" class="small fiscal-toggle"><i
+                    class="fa-solid fa-file-invoice"></i> Agregar datos fiscales</button>
+              </div>
+              <div id="customerFiscalBox" class="hidden">
+                <div class="subsection-title">Datos fiscales opcionales</div>
+                <div class="form-row compact-row">
+                  <label><span>RFC</span><input id="customerRfc" placeholder="RFC opcional"></label>
+                  <label><span>Código Postal</span><input id="customerPostalCode"
+                      placeholder="CP fiscal opcional"></label>
+                  <label><span>Régimen Fiscal</span><input id="customerTaxRegime" placeholder="Ej. 601, 612"></label>
+                  <label><span>Uso del CFDI</span><input id="customerCfdiUse" placeholder="Ej. G03, P01"></label>
+                </div>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button id="cancelCustomerModal" type="button" class="secondary"><i class="fa-solid fa-ban"></i>
+                Cancelar</button>
+              <button id="saveCustomer" type="button"><i class="fa-solid fa-floppy-disk"></i> Guardar cliente</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vehículos -->
+        <section id="vehicles" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-solid fa-car-side"></i> Directorio de Vehículos</h1>
+            </div>
+            <button id="openVehicleModal"><i class="fa-solid fa-car-on"></i> Registrar vehículo</button>
+          </div>
+          <div class="form-row">
+            <label class="customer-search-label">
+              <div id="vehicleFilterCustomerBox" class="customer-picker vehicle-filter-picker">
+                <span class="customer-search-input"><i class="fa-solid fa-magnifying-glass"></i>
+                  <input id="vehicleFilterCustomerSearch" placeholder="Buscar cliente o mostrar todos"
+                    autocomplete="off"></span>
+                <div id="vehicleFilterCustomerOptions" class="customer-options"></div>
+              </div>
+            </label>
+          </div>
+          <div id="vehiclesList" class="list" style="margin-top: 12px;"></div>
+        </section>
+
+        <div id="vehicleModalOverlay" class="modal-overlay hidden">
+          <div class="modal-card vehicle-modal" role="dialog" aria-modal="true" aria-labelledby="vehicleModalTitle">
+            <div class="modal-header">
+              <div>
+                <h2 id="vehicleModalTitle"><i class="fa-solid fa-car-on"></i> Registrar vehículo</h2>
+              </div>
+              <button id="closeVehicleModal" type="button" class="icon-button" aria-label="Cerrar modal"><i
+                  class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="new-customer-panel modal-form-panel">
+              <div class="subsection-title">Propietario</div>
+              <div class="form-row compact-row">
+                <label>
+                  <span>Propietario / Cliente</span>
+                  <select id="vehicleCustomer"></select>
+                </label>
+              </div>
+              <div class="subsection-title">Vehículo</div>
+              <div class="segmented">
+                <label><input type="radio" name="vehicleInputMode" value="vin" checked> Por VIN/NIV</label>
+                <label><input type="radio" name="vehicleInputMode" value="manual"> Manual</label>
+              </div>
+              <div id="vehicleVinBox">
+                <label>
+                  <span>Número de Serie (VIN/NIV)</span>
+                  <div class="inline-input-action">
+                    <input id="vin" maxlength="17" placeholder="17 caracteres alfanuméricos"
+                      style="text-transform: uppercase;">
+                    <button id="decodeVin" class="secondary" type="button">
+                      <i class="fa-solid fa-magnifying-glass"></i> Decodificar
+                    </button>
+                  </div>
+                </label>
+              </div>
+              <div id="vehicleManualBox" class="hidden">
+                <div class="form-row compact-row">
+                  <label><span>Año</span><select id="vehicleRefYear"></select></label>
+                  <label><span>Marca</span><select id="vehicleRefMake" disabled></select></label>
+                  <label><span>Modelo</span><select id="vehicleRefModel" disabled></select></label>
+                  <label><span>Versión</span><select id="vehicleRefStyle" disabled></select></label>
+                </div>
+              </div>
+              <div class="form-row compact-row">
+                <label>
+                  <span>Placas</span>
+                  <input id="vehiclePlates" placeholder="Número de Placa">
+                </label>
+                <label>
+                  <span>Número económico</span>
+                  <input id="vehicleEconomicNumber" placeholder="Opcional">
+                </label>
+                <label>
+                  <span>Año</span>
+                  <input id="vehicleYear" placeholder="Año modelo">
+                </label>
+                <label>
+                  <span>Marca</span>
+                  <input id="vehicleMake" placeholder="Marca del fabricante">
+                </label>
+                <label>
+                  <span>Modelo</span>
+                  <input id="vehicleModel" placeholder="Modelo de auto">
+                </label>
+                <label>
+                  <span>Versión / Trim</span>
+                  <input id="vehicleTrim" placeholder="Ej. Laredo, Sport, Turbo">
+                </label>
+                <label>
+                  <span>Kilometraje</span>
+                  <input id="vehicleMileage" type="number" placeholder="KM actuales">
+                </label>
+              </div>
+
+              <div id="vinResultContainer" class="vin-result-card hidden">
+                <h3><i class="fa-solid fa-microchip"></i> Informacion encontrada por VIN/NIV</h3>
+                <p class="muted">Estos datos vienen de NHTSA. Los campos principales se llenan automaticamente y puedes
+                  editarlos manualmente antes de guardar.</p>
+                <div id="specsContainer" class="specs-grid"></div>
+                <pre id="vinResult" class="pre hidden"></pre>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button id="cancelVehicleModal" type="button" class="secondary"><i class="fa-solid fa-ban"></i>
+                Cancelar</button>
+              <button id="saveVehicle" type="button"><i class="fa-solid fa-car-on"></i> Registrar vehículo</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Órdenes de Trabajo -->
+        <section id="orders" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-solid fa-screwdriver-wrench"></i> Órdenes de Trabajo</h1>
+            </div>
+            <span id="ordersResultCount" class="badge badge-recepcion">0 órdenes</span>
+          </div>
+
+          <div class="orders-toolbar">
+            <label class="orders-search">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input id="ordersSearch"
+                placeholder="Buscar por empresa, marca, modelo, VIN/NIV, placas, número económico, folio...">
+            </label>
+            <div>
+              <div id="ordersStatusFilters" class="status-filter-row"></div>
+            </div>
+          </div>
+
+          <div id="ordersList" class="list orders-grid"></div>
+        </section>
+
+        <!-- Vista de Mecánico -->
+        <section id="mechanic" class="tab card hidden">
+          <h1><i class="fa-solid fa-helmet-safety"></i> Panel del Mecánico</h1>
+          <div
+            style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.01); border: 1px solid var(--line); padding: 14px 20px; border-radius: 12px;">
+            <div>
+              <p style="font-size:14px; font-weight: 500;">Visualiza y gestiona las órdenes de trabajo asignadas que
+                están en reparación activa.</p>
+            </div>
+            <button id="loadMechanic" class="secondary">
+              <i class="fa-solid fa-rotate"></i> Cargar Mis Órdenes Activas
+            </button>
+          </div>
+          <div id="mechanicList" class="list"></div>
+        </section>
+
+        <!-- Catálogo -->
+        <section id="catalog" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-solid fa-book"></i> Catálogo de Servicios y Refacciones</h1>
+              <p class="muted">Los cambios al catálogo no modifican órdenes ya creadas.</p>
+            </div>
+            <span id="catalogModeBadge" class="badge badge-recepcion">Nuevo item</span>
+          </div>
+          <div class="form-row">
+            <label>
+              <span>Descripción del Item</span>
+              <input id="catalogDescription" placeholder="Ej. Cambio de balatas delanteras o Filtro de aceite">
+            </label>
+            <label>
+              <span>Tipo de Item</span>
+              <select id="catalogType">
+                <option value="mano_obra">Mano de Obra</option>
+                <option value="refaccion">Refacción / Repuesto</option>
+              </select>
+            </label>
+            <label>
+              <span>Precio al Público</span>
+              <input id="catalogPrice" type="number" placeholder="Ej. 1200">
+            </label>
+            <label>
+              <span>Costo Interno (Opcional)</span>
+              <input id="catalogCost" type="number" placeholder="Ej. 650">
+            </label>
+            <div class="form-group-btn" style="margin-bottom: 16px;">
+              <button id="saveCatalog" style="width: 100%;">
+                <i class="fa-solid fa-plus"></i> Agregar al Catálogo
+              </button>
+              <button id="cancelCatalogEdit" class="secondary hidden" style="width: 100%; margin-top: 8px;" type="button">
+                <i class="fa-solid fa-ban"></i> Cancelar edición
+              </button>
+            </div>
+          </div>
+          <div class="orders-toolbar" style="margin-top: 10px; border-top: 1px solid var(--line); padding-top: 16px;">
+            <label class="orders-search">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input id="catalogSearch" placeholder="Buscar por descripción, tipo o precio...">
+            </label>
+            <label>
+              <span>Tipo</span>
+              <select id="catalogTypeFilter">
+                <option value="">Todos</option>
+                <option value="mano_obra">Mano de obra</option>
+                <option value="refaccion">Refacciones</option>
+              </select>
+            </label>
+            <label class="quote-save-catalog-check">
+              <input id="catalogShowInactive" type="checkbox"> Mostrar inactivos
+            </label>
+          </div>
+          <h2 style="margin-top: 10px;"><i class="fa-solid fa-warehouse"></i> Artículos y Servicios Registrados</h2>
+          <div id="catalogList" class="list" style="margin-top: 12px;"></div>
+        </section>
+
+        <!-- Facturación -->
+        <section id="billing" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-solid fa-file-invoice-dollar"></i> Facturación CFDI</h1>
+              <p class="muted">Ambiente sandbox Facturama multiRFC. El CSD se envía a Facturama y no se guarda localmente.</p>
+            </div>
+            <span class="badge badge-esperando_aprobacion">Sandbox</span>
+          </div>
+
+          <div class="billing-grid">
+            <section class="panel billing-panel">
+              <h2><i class="fa-solid fa-building-circle-check"></i> Datos fiscales del taller</h2>
+              <div class="form-row compact-row">
+                <label><span>RFC emisor</span><input id="issuerRfc" placeholder="RFC del taller"></label>
+                <label><span>Razón social</span><input id="issuerLegalName" placeholder="Razón social exacta"></label>
+                <label><span>Régimen fiscal</span><input id="issuerFiscalRegime" placeholder="Ej. 601, 612"></label>
+                <label><span>CP expedición</span><input id="issuerExpeditionPlace" maxlength="5" placeholder="Código postal"></label>
+              </div>
+              <button id="saveIssuer" type="button"><i class="fa-solid fa-floppy-disk"></i> Guardar emisor</button>
+            </section>
+
+            <section class="panel billing-panel">
+              <h2><i class="fa-solid fa-key"></i> Certificado CSD</h2>
+              <div id="certificateSummary" class="summary-box"></div>
+              <div class="form-row compact-row">
+                <label><span>RFC certificado</span><input id="csdRfc" placeholder="RFC propietario del CSD"></label>
+                <label><span>Certificado .cer</span><input id="csdCertificate" type="file" accept=".cer"></label>
+                <label><span>Llave privada .key</span><input id="csdPrivateKey" type="file" accept=".key"></label>
+                <label><span>Contraseña llave</span><input id="csdPassword" type="password" placeholder="Contraseña"></label>
+              </div>
+              <div class="modal-actions">
+                <button id="uploadCertificate" type="button"><i class="fa-solid fa-upload"></i> Cargar/actualizar CSD</button>
+                <button id="deleteCertificate" type="button" class="secondary"><i class="fa-solid fa-trash"></i> Eliminar CSD</button>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel billing-panel" style="margin-top: 16px;">
+            <div class="section-toolbar">
+              <div>
+                <h2><i class="fa-solid fa-list"></i> Facturas realizadas</h2>
+              </div>
+              <button id="refreshBilling" type="button" class="secondary small"><i class="fa-solid fa-rotate"></i> Actualizar</button>
+            </div>
+            <div id="billingInvoices" class="list"></div>
+          </section>
+        </section>
+
+        <!-- WhatsApp -->
+        <section id="whatsapp" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-brands fa-whatsapp"></i> WhatsApp</h1>
+              <p class="muted">Conecta WhatsApp Web con Baileys para enviar mensajes y responder clientes.</p>
+            </div>
+          </div>
+
+          <div id="whatsappStatusBox" class="wa-top-status" style="margin-bottom: 16px;"></div>
+          <div id="whatsappQrBox" class="panel hidden" style="text-align:center; margin-bottom: 16px;"></div>
+
+          <div class="wa-inbox">
+            <aside class="wa-sidebar">
+              <div class="wa-sidebar-header">
+                <div class="wa-me-row">
+                  <div class="wa-avatar wa-avatar-me"><i class="fa-brands fa-whatsapp"></i></div>
+                  <div>
+                    <strong>Bandeja Masim</strong>
+                    <span>Atención a clientes</span>
+                  </div>
+                </div>
+                <label class="wa-search-box">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  <input id="waSearch" placeholder="Buscar cliente, teléfono o mensaje...">
+                </label>
+                <div class="wa-new-chat">
+                  <select id="waCustomer"></select>
+                  <input id="waPhone" placeholder="Nuevo chat: teléfono WhatsApp">
+                </div>
+              </div>
+              <div id="whatsappConversations" class="wa-conversation-list"></div>
+            </aside>
+
+            <section class="wa-thread">
+              <header class="wa-thread-header">
+                <div class="wa-thread-contact">
+                  <div id="whatsappThreadAvatar" class="wa-avatar">WA</div>
+                  <div>
+                    <h2 id="whatsappThreadTitle">Selecciona una conversación</h2>
+                    <p id="whatsappThreadMeta" class="muted">El historial aparecerá aquí.</p>
+                  </div>
+                </div>
+                <div class="wa-thread-actions">
+                  <button id="refreshWhatsapp" type="button" class="icon-button" aria-label="Actualizar WhatsApp"><i class="fa-solid fa-rotate"></i></button>
+                </div>
+              </header>
+              <div id="whatsappMessages" class="wa-message-list"></div>
+              <div class="wa-composer">
+                <button type="button" class="wa-composer-icon" aria-label="Adjuntar"><i class="fa-solid fa-paperclip"></i></button>
+                <textarea id="waMessage" rows="1" placeholder="Escribe un mensaje"></textarea>
+                <button id="sendWhatsapp" type="button" class="wa-send-button" aria-label="Enviar mensaje"><i class="fa-solid fa-paper-plane"></i></button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <!-- CONTENEDOR FLOTANTE PARA TOASTS -->
+  <div id="orderModal" class="hidden"></div>
+  <div id="quoteItemModal" class="hidden"></div>
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/app.js?v=20260604-whatsapp-web-inbox"></script>
+</body>
+
+</html>

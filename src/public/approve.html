@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aprobación de Servicio - Masim</title>
+  <meta name="description" content="Portal de aprobación de presupuestos de servicio automotriz Masim. Revise y apruebe la cotización de su vehículo de forma segura.">
+  <link rel="stylesheet" href="/styles.css">
+  <!-- FontAwesome 6 para íconos premium -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* Estilos específicos del portal de aprobación */
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .approval-header {
+      text-align: center;
+      margin-bottom: 28px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .approval-logo-icon {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+      border-radius: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      color: white;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 24px rgba(220, 38, 38, 0.25);
+    }
+
+    .approval-header h1 {
+      border: 0;
+      justify-content: center;
+      margin-bottom: 4px;
+      padding: 0;
+      font-size: 26px;
+    }
+
+    .approval-header p {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+    }
+
+    .approval-footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .approval-footer p {
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .approval-footer .shield-icon {
+      width: 28px;
+      height: 28px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--success);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    /* Confirm modal */
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(6px);
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .confirm-overlay.active {
+      opacity: 1;
+    }
+
+    .confirm-modal {
+      background: var(--bg-card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 32px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      transform: scale(0.9);
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .confirm-overlay.active .confirm-modal {
+      transform: scale(1);
+    }
+
+    .confirm-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    .confirm-icon.approve {
+      background: rgba(16, 185, 129, 0.1);
+      border: 2px solid rgba(16, 185, 129, 0.3);
+      color: var(--success);
+    }
+
+    .confirm-icon.reject {
+      background: rgba(239, 68, 68, 0.1);
+      border: 2px solid rgba(239, 68, 68, 0.3);
+      color: var(--danger);
+    }
+
+    .confirm-modal h2 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+
+    .confirm-modal p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    .confirm-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .confirm-actions button {
+      min-width: 120px;
+      padding: 12px 20px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main class="approval">
+    <section class="approval-card">
+      <div class="approval-header">
+        <div class="approval-logo-icon">
+          <i class="fa-solid fa-car-burst"></i>
+        </div>
+        <h1>MASIM</h1>
+        <p class="muted">Portal de Aprobación de Servicios</p>
+      </div>
+
+      <div id="approvalMessage" class="message hidden"></div>
+      
+      <!-- Contenedor del documento -->
+      <div id="approvalDoc">
+        <div style="display: flex; justify-content: center; padding: 40px 0;">
+          <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 32px; color: var(--brand);"></i>
+        </div>
+      </div>
+
+      <!-- Acciones de Aprobación -->
+      <div id="actionsContainer" class="approval-actions hidden">
+        <button id="approveBtn" style="background: var(--success); box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);">
+          <i class="fa-solid fa-circle-check"></i> Aprobar Presupuesto
+        </button>
+        <button id="rejectBtn" class="danger">
+          <i class="fa-solid fa-circle-xmark"></i> Rechazar Presupuesto
+        </button>
+        <button id="downloadPdfBtn" class="secondary">
+          <i class="fa-solid fa-file-pdf"></i> Descargar PDF
+        </button>
+      </div>
+      
+      <div class="approval-footer">
+        <div class="shield-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <p class="muted">
+          Conexión segura. Su decisión será registrada directamente en el taller en tiempo real.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal de Confirmación -->
+  <div id="confirmOverlay" class="confirm-overlay" style="display:none;">
+    <div class="confirm-modal">
+      <div id="confirmIcon" class="confirm-icon approve"><i class="fa-solid fa-circle-check"></i></div>
+      <h2 id="confirmTitle">¿Confirmar aprobación?</h2>
+      <p id="confirmText">Al aprobar, el taller comenzará a trabajar en su vehículo inmediatamente.</p>
+      <label id="rejectNoteBox" style="display:none; text-align:left; margin-bottom:18px;">
+        <span style="display:block; font-size:12px; color:var(--muted); margin-bottom:6px;">Observaciones para el taller</span>
+        <textarea id="rejectNote" rows="4" placeholder="Indique por qué no acepta la cotización o qué duda desea aclarar"></textarea>
+      </label>
+      <div class="confirm-actions">
+        <button id="confirmCancel" class="secondary">Cancelar</button>
+        <button id="confirmOk" style="background: var(--success);">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = new URLSearchParams(location.search).get('token');
+    const doc = document.getElementById('approvalDoc');
+    const msg = document.getElementById('approvalMessage');
+    const actions = document.getElementById('actionsContainer');
+    let pendingDecision = null;
+    let pendingQuote = null;
+
+    function showMsg(text, type = 'success') {
+      msg.textContent = text;
+      msg.className = `message ${type}`;
+      msg.classList.remove('hidden');
+    }
+
+    async function api(path, options) {
+      const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error de conexión');
+      return data;
+    }
+
+    function money(value) {
+      return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function statusLabel(status) {
+      return ({ esperando_aprobacion: 'Pendiente de aprobación', ot_activa: 'Aprobada', aprobado: 'Aprobada', rechazado: 'Rechazada', cotizacion_borrador: 'No aprobada', borrador: 'En preparación', recepcion: 'En preparación' })[status] || status;
+    }
+
+    function statusClass(status) {
+      if (['ot_activa', 'aprobado'].includes(status)) return 'badge-facturada_cerrada';
+      if (['rechazado', 'cotizacion_borrador'].includes(status)) return 'badge-recepcion';
+      return 'badge-esperando_aprobacion';
+    }
+
+    function quoteCard(quote) {
+      const canDecide = quote.can_decide && quote.status === 'esperando_aprobacion';
+      const canPdf = quote.can_pdf && !['borrador', 'recepcion'].includes(quote.status);
+      return `
+        <div style="background:rgba(255,255,255,0.01); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid var(--line-light); padding-bottom:10px;">
+            <div><span class="muted" style="font-size:9px; text-transform:uppercase; letter-spacing:.06em;">${quote.quoteType === 'work_order' ? 'Cotización principal' : 'Complemento de cotización'}</span><div style="font-weight:700; color:var(--brand); font-size:16px;">${escapeHtml(quote.folio)}</div><div class="muted" style="font-size:12px;">${escapeHtml(quote.description || '')}</div></div>
+            <span class="badge ${statusClass(quote.status)}">${statusLabel(quote.status)}</span>
+          </div>
+          <h3 style="margin-top:14px; font-size:13px;"><i class="fa-solid fa-clipboard-list"></i> Conceptos</h3>
+          <table><thead><tr><th style="width:50px; text-align:center;">Cant.</th><th>Descripción</th><th style="text-align:right;">Subtotal</th></tr></thead><tbody>${(quote.items || []).map((i) => `<tr><td style="text-align:center; font-weight:600;">${escapeHtml(i.quantity)}</td><td>${escapeHtml(i.description)}</td><td style="text-align:right; font-weight:600; color:#fff;">${money(i.applied_price * i.quantity)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Sin conceptos capturados.</td></tr>'}</tbody></table>
+          <div class="approval-total-banner"><div style="display:grid; gap:4px; margin-bottom:10px; font-size:12px; color:var(--ink-secondary);"><div style="display:flex; justify-content:space-between; gap:12px;"><span>Subtotal</span><strong>${money(quote.subtotal)}</strong></div><div style="display:flex; justify-content:space-between; gap:12px;"><span>IVA</span><strong>${money(quote.tax)}</strong></div></div><span class="muted" style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;">Total</span><h3>${money(quote.total)}</h3></div>
+          ${quote.rejection_note ? `<div style="margin-top:12px; padding:10px; border-left:3px solid var(--danger); background:rgba(239,68,68,.06); border-radius:10px;"><strong>Comentarios del rechazo</strong><p class="muted">${escapeHtml(quote.rejection_note)}</p></div>` : ''}
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">${canDecide ? `<button onclick="showConfirm('aprobar', '${quote.quoteType}', ${quote.id})" style="background:var(--success);"><i class="fa-solid fa-circle-check"></i> Aprobar</button><button onclick="showConfirm('rechazar', '${quote.quoteType}', ${quote.id})" class="danger"><i class="fa-solid fa-circle-xmark"></i> Rechazar</button>` : ''}${canPdf ? `<button onclick="downloadQuotePdf('${quote.quoteType}', ${quote.id})" class="secondary"><i class="fa-solid fa-file-pdf"></i> Descargar PDF</button>` : ''}</div>
+        </div>`;
+    }
+
+    async function load() {
+      if (!token) {
+        doc.innerHTML = `<div style="text-align:center; padding:20px 0;"><i class="fa-solid fa-circle-exclamation" style="font-size:48px; color:var(--danger); margin-bottom:12px;"></i><p>El token de aprobación es inválido o ha expirado. Por favor solicite un nuevo enlace en el taller.</p></div>`;
+        return;
+      }
+      try {
+        const data = await api('/api/public-approvals/' + token);
+        const order = data.order;
+        doc.innerHTML = `
+          <div style="background:rgba(255,255,255,0.01); border:1px solid var(--line); border-radius:16px; padding:20px; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line-light); padding-bottom:10px;"><div><span class="muted" style="font-size:9px; text-transform:uppercase; letter-spacing:.06em;">Folio de Orden</span><div style="font-weight:700; color:var(--brand); font-size:16px;">${escapeHtml(order.folio)}</div></div><div style="text-align:right;"><span class="muted" style="font-size:9px; text-transform:uppercase; letter-spacing:.06em;">Cliente</span><div style="font-weight:600; color:#fff; font-size:14px;">${escapeHtml(order.customer_name)}</div></div></div>
+            <div class="approval-vehicle-card"><div class="approval-vehicle-icon"><i class="fa-solid fa-car"></i></div><div><span class="muted" style="font-size:10px; text-transform:uppercase; letter-spacing:.06em;">VEHÍCULO DEL CLIENTE</span><h2 style="margin:0; font-size:17px; color:#fff;">${escapeHtml([order.year || '', order.make || '', order.model || ''].join(' ').trim())}</h2><span class="muted" style="font-size:12px;">Placas: <strong>${escapeHtml(order.plates || 'S/P')}</strong></span></div></div>
+          </div>
+          ${(data.quotes || []).map(quoteCard).join('')}`;
+        actions.classList.add('hidden');
+      } catch (error) {
+        doc.innerHTML = `<div style="text-align:center; padding:20px 0;"><i class="fa-solid fa-triangle-exclamation" style="font-size:48px; color:var(--danger); margin-bottom:12px;"></i><p>${escapeHtml(error.message)}</p></div>`;
+      }
+    }
+
+    function showConfirm(decision, quoteType, quoteId) {
+      pendingDecision = decision;
+      pendingQuote = { quoteType, quoteId };
+      const overlay = document.getElementById('confirmOverlay');
+      const icon = document.getElementById('confirmIcon');
+      const title = document.getElementById('confirmTitle');
+      const text = document.getElementById('confirmText');
+      const okBtn = document.getElementById('confirmOk');
+      const noteBox = document.getElementById('rejectNoteBox');
+      const note = document.getElementById('rejectNote');
+      if (decision === 'aprobar') {
+        icon.className = 'confirm-icon approve';
+        icon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+        title.textContent = '¿Confirmar aprobación?';
+        text.textContent = 'Al aprobar, el taller podrá continuar con esta cotización.';
+        okBtn.style.background = 'var(--success)';
+        okBtn.textContent = 'Sí, aprobar';
+        noteBox.style.display = 'none';
+        note.value = '';
+      } else {
+        icon.className = 'confirm-icon reject';
+        icon.innerHTML = '<i class="fa-solid fa-circle-xmark"></i>';
+        title.textContent = '¿Rechazar cotización?';
+        text.textContent = 'Escriba sus observaciones para que el taller pueda darle seguimiento.';
+        okBtn.style.background = 'var(--danger)';
+        okBtn.textContent = 'Sí, rechazar';
+        noteBox.style.display = 'block';
+      }
+      overlay.style.display = 'flex';
+      requestAnimationFrame(() => overlay.classList.add('active'));
+    }
+
+    function hideConfirm() {
+      const overlay = document.getElementById('confirmOverlay');
+      overlay.classList.remove('active');
+      setTimeout(() => { overlay.style.display = 'none'; }, 300);
+    }
+
+    async function decide(decision, note = '') {
+      try {
+        await api('/api/public-approvals/' + token + '/decision', { method: 'POST', body: JSON.stringify({ decision, note, quote_type: pendingQuote.quoteType, quote_id: pendingQuote.quoteId }) });
+        showMsg(decision === 'aprobar' ? 'Cotización aprobada correctamente.' : 'Cotización rechazada. Sus comentarios fueron enviados al taller.', decision === 'aprobar' ? 'success' : 'info');
+        await load();
+      } catch (error) {
+        showMsg(error.message, 'error');
+      }
+    }
+
+    function downloadQuotePdf(quoteType, quoteId) {
+      window.open(`/api/public-approvals/${token}/pdf?quote_type=${quoteType}&quote_id=${quoteId}`, '_blank');
+    }
+
+    document.getElementById('confirmCancel').onclick = hideConfirm;
+    document.getElementById('confirmOk').onclick = async () => {
+      if (!pendingDecision || !pendingQuote) return;
+      const decision = pendingDecision;
+      const note = document.getElementById('rejectNote').value.trim();
+      hideConfirm();
+      await decide(decision, note);
+      pendingDecision = null;
+      pendingQuote = null;
+    };
+    document.getElementById('confirmOverlay').onclick = (e) => { if (e.target === e.currentTarget) hideConfirm(); };
+    window.showConfirm = showConfirm;
+    window.downloadQuotePdf = downloadQuotePdf;
+    load();
+  </script>
+</body>
+</html>
