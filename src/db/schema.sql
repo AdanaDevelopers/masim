@@ -2,8 +2,10 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
+  username TEXT UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('administrador', 'mecanico')),
+  role TEXT NOT NULL CHECK (role IN ('administrador', 'mecanico', 'personalizado')),
+  permissions TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -241,6 +243,16 @@ CREATE TABLE IF NOT EXISTS public_approval_tokens (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS whatsapp_contacts (
+  jid TEXT PRIMARY KEY,
+  phone TEXT,
+  push_name TEXT,
+  profile_pic_url TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_phone ON whatsapp_contacts(phone);
+
 CREATE TABLE IF NOT EXISTS whatsapp_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   jid TEXT NOT NULL,
@@ -269,3 +281,18 @@ CREATE INDEX IF NOT EXISTS idx_invoices_facturama_id ON invoices(facturama_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_jid ON whatsapp_messages(jid);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_customer ON whatsapp_messages(customer_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_created_at ON whatsapp_messages(created_at);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  action TEXT NOT NULL,
+  section TEXT NOT NULL,
+  description TEXT NOT NULL,
+  ip_address TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_section ON audit_logs(section);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);

@@ -83,6 +83,17 @@ function createBillingTables(db) {
 
 function createWhatsappTables(db) {
   db.prepare(`
+    CREATE TABLE IF NOT EXISTS whatsapp_contacts (
+      jid TEXT PRIMARY KEY,
+      phone TEXT,
+      push_name TEXT,
+      profile_pic_url TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_whatsapp_contacts_phone ON whatsapp_contacts(phone)').run();
+
+  db.prepare(`
     CREATE TABLE IF NOT EXISTS whatsapp_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       jid TEXT NOT NULL,
@@ -107,6 +118,68 @@ function createWhatsappTables(db) {
   db.prepare('CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_created_at ON whatsapp_messages(created_at)').run();
 }
 
+function createUserSystemTables(db) {
+  // Migración para soportar el rol 'personalizado' en el constraint de la tabla users
+  const usersTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql || '';
+  if (usersTableSql && !usersTableSql.includes('personalizado')) {
+    console.log('Migrando tabla users para soportar rol "personalizado"...');
+    db.prepare('PRAGMA foreign_keys = OFF').run();
+    try {
+      db.transaction(() => {
+        db.prepare('ALTER TABLE users RENAME TO users_old').run();
+        db.prepare(`
+          CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            username TEXT UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('administrador', 'mecanico', 'personalizado')),
+            permissions TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `).run();
+        db.prepare(`
+          INSERT INTO users (id, name, email, username, password_hash, role, permissions, created_at)
+          SELECT id, name, email, username, password_hash, role, permissions, created_at FROM users_old
+        `).run();
+        db.prepare('DROP TABLE users_old').run();
+      })();
+    } finally {
+      db.prepare('PRAGMA foreign_keys = ON').run();
+    }
+    console.log('Migración de tabla users completada con éxito.');
+  }
+
+  addColumn(db, 'users', 'username', 'TEXT');
+  addColumn(db, 'users', 'permissions', 'TEXT');
+
+  // Backfill username para usuarios existentes si no tienen
+  db.prepare(`
+    UPDATE users 
+    SET username = LOWER(SUBSTR(email, 1, INSTR(email, '@') - 1)) 
+    WHERE username IS NULL OR username = ''
+  `).run();
+
+  db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)').run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      action TEXT NOT NULL,
+      section TEXT NOT NULL,
+      description TEXT NOT NULL,
+      ip_address TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `).run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)').run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_logs_section ON audit_logs(section)').run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)').run();
+}
+
 function migrate(db) {
   addColumn(db, 'vehicles', 'economic_number', 'TEXT');
   addColumn(db, 'work_orders', 'discount_type', "TEXT NOT NULL DEFAULT 'none'");
@@ -122,6 +195,7 @@ function migrate(db) {
   createMaintenanceVisits(db);
   createBillingTables(db);
   createWhatsappTables(db);
+  createUserSystemTables(db);
 }
 
 module.exports = migrate;

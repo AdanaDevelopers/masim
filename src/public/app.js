@@ -8,6 +8,8 @@ let selectedOrderId = null;
 let decodedVin = null;
 let editingCustomerId = null;
 let editingVehicleId = null;
+let editingUserId = null;
+let systemUsers = [];
 let vehicleFilterCustomerId = '';
 let vehicleFilterCustomerSearch = '';
 let orderSearchText = '';
@@ -191,6 +193,22 @@ function contactInitials(value) {
   return (parts.length > 1 ? parts[0][0] + parts[1][0] : parts[0]?.slice(0, 2) || 'WA').toUpperCase();
 }
 
+function formatPhoneFriendly(phone) {
+  if (!phone) return '';
+  let cleanPhone = phone.split('@')[0].replace(/\D/g, '');
+  if (cleanPhone.startsWith('52') && cleanPhone.length >= 11) {
+    if (cleanPhone.startsWith('521') && cleanPhone.length === 13) {
+      cleanPhone = cleanPhone.slice(3);
+    } else {
+      cleanPhone = cleanPhone.slice(2);
+    }
+  }
+  if (cleanPhone.length === 10) {
+    return `(${cleanPhone.slice(0,2)}) ${cleanPhone.slice(2,6)}-${cleanPhone.slice(6)}`;
+  }
+  return cleanPhone;
+}
+
 // Saludo dinámico
 function getGreeting() {
   const hour = new Date().getHours();
@@ -292,6 +310,12 @@ function showTab(name) {
     requestAnimationFrame(() => {
       targetTab.classList.add('tab-entering');
     });
+  }
+
+  if (name === 'users') {
+    loadUsers().catch(() => {});
+  } else if (name === 'auditLogs') {
+    loadAuditLogs().catch(() => {});
   }
 }
 
@@ -474,7 +498,16 @@ function renderWhatsapp() {
     if (selected) $('waCustomer').value = selected;
   }
 
-  const statusLabel = whatsappStatus?.connected ? 'Conectado' : (whatsappStatus?.state || 'No iniciado');
+  const stateLabels = {
+    'disconnected': 'Desconectado',
+    'connecting': 'Conectando...',
+    'qr': 'Esperando Escaneo QR',
+    'connected': 'Conectado',
+    'logged_out': 'Sesión Cerrada (Vincular de nuevo)',
+    'error': 'Error de Conexión'
+  };
+  const statusLabel = whatsappStatus?.connected ? 'Conectado' : (stateLabels[whatsappStatus?.state] || whatsappStatus?.state || 'No iniciado');
+  
   const totalUnread = whatsappConversations.reduce((sum, conversation) => sum + Number(conversation.unread_count || 0), 0);
   const selectedConversation = whatsappConversations.find((conversation) => conversation.jid === selectedWhatsappJid) || null;
   if ($('whatsappStatusBox')) {
@@ -502,20 +535,30 @@ function renderWhatsapp() {
   if ($('whatsappConversations')) {
     const query = normalizeSearch(whatsappSearchText);
     const visibleConversations = whatsappConversations.filter((conversation) => {
-      const haystack = [conversation.customer_name, conversation.phone, conversation.jid, conversation.last_body].join(' ');
+      const haystack = [conversation.customer_name, conversation.whatsapp_push_name, conversation.phone, conversation.jid, conversation.last_body].join(' ');
       return !query || normalizeSearch(haystack).includes(query);
     });
     $('whatsappConversations').innerHTML = visibleConversations.map((conversation) => {
-      const title = conversation.customer_name || conversation.phone || conversation.jid;
+      const title = conversation.customer_name || conversation.whatsapp_push_name || formatPhoneFriendly(conversation.phone) || conversation.jid;
+      const subtitle = conversation.customer_name 
+        ? `${conversation.whatsapp_push_name ? '~' + conversation.whatsapp_push_name + ' · ' : ''}${formatPhoneFriendly(conversation.phone)}`
+        : (conversation.whatsapp_push_name ? `~${conversation.whatsapp_push_name} · ${formatPhoneFriendly(conversation.phone)}` : formatPhoneFriendly(conversation.phone));
+      
       const unread = Number(conversation.unread_count || 0);
       const isSelected = conversation.jid === selectedWhatsappJid;
-      const previewPrefix = conversation.last_direction === 'out' ? 'Tu: ' : '';
+      const previewPrefix = conversation.last_direction === 'out' ? 'Tú: ' : '';
+      
+      const avatarHtml = conversation.whatsapp_profile_pic
+        ? `<img src="${escapeAttr(conversation.whatsapp_profile_pic)}" class="wa-avatar-img" alt="${escapeAttr(title)}">`
+        : `<span class="wa-avatar-text">${escapeHtml(contactInitials(title))}</span>`;
+
       return `
         <button type="button" class="wa-conversation ${isSelected ? 'active' : ''} ${unread ? 'unread' : ''}" data-jid="${escapeAttr(conversation.jid)}">
-          <span class="wa-avatar">${escapeHtml(contactInitials(title))}</span>
+          <div class="wa-avatar">${avatarHtml}</div>
           <span class="wa-conversation-main">
-            <strong>${escapeHtml(title)}</strong>
-            <small>${escapeHtml(previewPrefix + (conversation.last_body || 'Mensaje sin texto'))}</small>
+            <strong class="wa-chat-title">${escapeHtml(title)}</strong>
+            <small class="wa-chat-subtitle">${escapeHtml(subtitle)}</small>
+            <small class="wa-chat-preview">${escapeHtml(previewPrefix + (conversation.last_body || 'Mensaje sin texto'))}</small>
           </span>
           <span class="wa-conversation-meta">
             <small>${escapeHtml(formatDateTime(conversation.last_message_at))}</small>
@@ -527,22 +570,33 @@ function renderWhatsapp() {
   }
 
   if ($('whatsappThreadTitle')) {
-    $('whatsappThreadTitle').textContent = selectedConversation
-      ? (selectedConversation.customer_name || selectedConversation.phone || selectedConversation.jid)
-      : 'Selecciona una conversación';
+    let title = 'Selecciona una conversación';
+    if (selectedConversation) {
+      title = selectedConversation.customer_name || selectedConversation.whatsapp_push_name || formatPhoneFriendly(selectedConversation.phone) || selectedConversation.jid;
+    }
+    $('whatsappThreadTitle').textContent = title;
   }
 
   if ($('whatsappThreadAvatar')) {
-    const avatarText = selectedConversation
-      ? contactInitials(selectedConversation.customer_name || selectedConversation.phone || selectedConversation.jid)
-      : 'WA';
-    $('whatsappThreadAvatar').textContent = avatarText;
+    if (selectedConversation) {
+      const title = selectedConversation.customer_name || selectedConversation.whatsapp_push_name || formatPhoneFriendly(selectedConversation.phone) || selectedConversation.jid;
+      if (selectedConversation.whatsapp_profile_pic) {
+        $('whatsappThreadAvatar').innerHTML = `<img src="${escapeAttr(selectedConversation.whatsapp_profile_pic)}" class="wa-avatar-img" alt="${escapeAttr(title)}">`;
+      } else {
+        $('whatsappThreadAvatar').innerHTML = `<span class="wa-avatar-text">${escapeHtml(contactInitials(title))}</span>`;
+      }
+    } else {
+      $('whatsappThreadAvatar').innerHTML = 'WA';
+    }
   }
 
   if ($('whatsappThreadMeta')) {
-    $('whatsappThreadMeta').textContent = selectedConversation
-      ? `${selectedConversation.phone || selectedConversation.jid} · ${selectedConversation.message_count} mensajes`
-      : 'Elige un chat de la izquierda o escribe un numero para iniciar uno nuevo.';
+    let metaText = 'Elige un chat de la izquierda o escribe un número para iniciar uno nuevo.';
+    if (selectedConversation) {
+      const pushInfo = selectedConversation.whatsapp_push_name ? ` (~${selectedConversation.whatsapp_push_name})` : '';
+      metaText = `${formatPhoneFriendly(selectedConversation.phone) || selectedConversation.jid}${pushInfo} · ${selectedConversation.message_count} mensajes`;
+    }
+    $('whatsappThreadMeta').textContent = metaText;
   }
 
   if ($('whatsappMessages')) {
@@ -847,7 +901,7 @@ function renderCatalog() {
           <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
             <button type="button" class="small secondary" data-edit-catalog="${i.id}"><i class="fa-solid fa-pen-to-square"></i> Modificar</button>
             ${inactive
-              ? `<button type="button" class="small brand-outline" data-restore-catalog="${i.id}"><i class="fa-solid fa-rotate-left"></i> Reactivar</button>`
+              ? `<button type="button" class="small secondary" data-restore-catalog="${i.id}"><i class="fa-solid fa-rotate-left"></i> Reactivar</button>`
               : `<button type="button" class="small secondary danger-action" data-delete-catalog="${i.id}"><i class="fa-solid fa-ban"></i> Desactivar</button>`}
           </div>
         </div>`
@@ -1094,7 +1148,7 @@ function renderQuoteDocumentList(o) {
     <aside class="quote-doc-list">
       <div class="quote-doc-list-head">
         <strong>Cotizaciones</strong>
-        ${canAddComplement ? '<button type="button" class="small brand-outline" onclick="createQuoteComplement()"><i class="fa-solid fa-plus"></i> Agregar complemento a cotización</button>' : ''}
+        ${canAddComplement ? '<button type="button" class="small secondary" onclick="createQuoteComplement()"><i class="fa-solid fa-plus"></i> Agregar complemento a cotización</button>' : ''}
       </div>
       ${docs.map((doc) => `
         <button type="button" class="quote-doc-card ${selectedQuoteDocumentKey === doc.key ? 'active' : ''}" onclick="selectQuoteDocument('${doc.key}')">
@@ -1175,7 +1229,7 @@ function renderSupplementQuotePane(o, supplement) {
           ` : '<div class="detail-empty">No se han agregado conceptos a este complemento.</div>'}
         </div>
         <div class="quote-complement-actions">
-          ${canEdit ? `<button onclick="sendSupplementApproval(${supplement.id})" class="brand-outline"><i class="fa-solid fa-paper-plane"></i> Cerrar y enviar a aprobación</button>` : `<button onclick="downloadSupplementQuote(${supplement.id}, '${supplement.folio_adicional}')" class="secondary"><i class="fa-solid fa-file-pdf"></i> Generar PDF</button>`}
+          ${canEdit ? `<button onclick="sendSupplementApproval(${supplement.id})" class="secondary"><i class="fa-solid fa-paper-plane"></i> Cerrar y enviar a aprobación</button>` : `<button onclick="downloadSupplementQuote(${supplement.id}, '${supplement.folio_adicional}')" class="secondary"><i class="fa-solid fa-file-pdf"></i> Generar PDF</button>`}
         </div>
       </div>
     </div>
@@ -1258,7 +1312,7 @@ function renderQuotePaneContent(o) {
         ` : '<div class="detail-empty">No se han agregado conceptos a esta orden.</div>'}
       </div>
       <div class="quote-complement-actions">
-        ${canEditQuote ? '<button onclick="generateQuoteLink()" class="brand-outline"><i class="fa-solid fa-paper-plane"></i> Cerrar y enviar a aprobación</button>' : '<button onclick="downloadOrderQuote()" class="secondary"><i class="fa-solid fa-file-pdf"></i> Generar PDF</button>'}
+        ${canEditQuote ? '<button onclick="generateQuoteLink()" class="secondary"><i class="fa-solid fa-paper-plane"></i> Cerrar y enviar a aprobación</button>' : '<button onclick="downloadOrderQuote()" class="secondary"><i class="fa-solid fa-file-pdf"></i> Generar PDF</button>'}
       </div>
       </div>
     </div>
@@ -1386,7 +1440,7 @@ function renderApprovalPaneContent(o) {
       <div class="approval-fixed-actions">
         ${renderFlowActions(o)}
         <button id="copyLinkBtn" onclick="copyWorkOrderLink()" class="secondary"><i class="fa-solid fa-link"></i> Copiar link de OT</button>
-        <button onclick="sendOrderApprovalWhatsApp()" class="brand-outline"><i class="fa-brands fa-whatsapp"></i> Enviar WhatsApp</button>
+        <button onclick="sendOrderApprovalWhatsApp()" class="green-action"><i class="fa-brands fa-whatsapp"></i> Enviar WhatsApp</button>
       </div>
     </div>
   `;
@@ -1609,6 +1663,17 @@ async function selectOrder(id) {
             </div>
             <div class="detail-note"><span><i class="fa-solid fa-triangle-exclamation"></i> Síntoma</span><p>${o.symptom || 'No especificado'}</p></div>
             <div class="detail-note"><span><i class="fa-solid fa-clipboard-list"></i> Inventario</span><p>${inventory.inventario || inventory.inventory || 'No registrado'}</p></div>
+            ${(currentUser?.role === 'administrador' || (currentUser?.permissions?.orders && currentUser.permissions.orders.d === true)) ? `
+              <div class="detail-section-head" style="margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px;">
+                <h3><i class="fa-solid fa-triangle-exclamation"></i> Acciones de Administración</h3>
+                <strong>Zona de peligro</strong>
+              </div>
+              <div class="detail-actions" style="margin-top: 12px; display: flex; gap: 12px;">
+                <button type="button" class="danger" onclick="deleteWorkOrder(${o.id}, '${o.folio}')">
+                  <i class="fa-solid fa-trash-can"></i> Eliminar orden de trabajo
+                </button>
+              </div>
+            ` : ''}
           </section>
 
           <section class="detail-section quote-section order-tab-pane ${activeOrderDetailTab === 'quote' ? 'active' : ''}" data-order-tab="quote">
@@ -1654,6 +1719,21 @@ function closeOrderModal() {
   modal.innerHTML = '';
   closeQuoteItemModal();
   renderOrders();
+}
+
+async function deleteWorkOrder(id, folio) {
+  if (!confirm(`¿Estás seguro de que deseas eliminar la orden de trabajo con Folio: ${folio}? Esta acción no se puede deshacer y borrará permanentemente la orden, sus conceptos de cotización y complementos.`)) {
+    return;
+  }
+
+  try {
+    const result = await api(`/api/work-orders/${id}`, { method: 'DELETE' });
+    showToast('Eliminada', result.message || 'Orden de trabajo eliminada correctamente', 'success');
+    closeOrderModal();
+    await loadAll();
+  } catch (error) {
+    // El error ya se reportó vía toast en la función api()
+  }
 }
 
 // ═══════════════════════════════════
@@ -1856,6 +1936,31 @@ async function downloadSupplementQuote(id, folio) {
   }
 }
 
+async function copyToClipboardText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      textArea.style.top = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+      } catch (err) {
+        console.error('Error fallback copy:', err);
+      }
+      textArea.remove();
+    }
+  } catch (err) {
+    console.error('Error al copiar:', err);
+  }
+}
+
 async function createApprovalToken() {
   const data = await api(`/api/work-orders/${selectedOrderId}/approval-token`, { 
     method: 'POST', 
@@ -1863,7 +1968,7 @@ async function createApprovalToken() {
   });
   const url = location.origin + data.url;
   
-  navigator.clipboard?.writeText(url);
+  await copyToClipboardText(url);
   
   const copyBtn = $('copyLinkBtn');
   if (copyBtn) {
@@ -2094,7 +2199,7 @@ async function sendSupplementApproval(supplementId) {
   const data = await api(`/api/supplements/${supplementId}/send-approval`, { method: 'POST', body: '{}' });
   const url = location.origin + data.url;
   
-  navigator.clipboard?.writeText(url);
+  await copyToClipboardText(url);
   showToast('Link de complemento copiado', 'Enlace para aprobación del complemento copiado al portapapeles', 'success');
   selectedQuoteDocumentKey = `supp-${supplementId}`;
   await selectOrder(selectedOrderId);
@@ -2197,6 +2302,7 @@ async function downloadInvoiceXml(id, folio) {
 // Exponer funciones globales
 window.selectOrder = selectOrder; 
 window.closeOrderModal = closeOrderModal;
+window.deleteWorkOrder = deleteWorkOrder;
 window.setOrderDetailTab = setOrderDetailTab;
 window.selectQuoteDocument = selectQuoteDocument;
 window.addOrderItem = addOrderItem; 
@@ -2632,7 +2738,7 @@ $('loginBtn').onclick = async () => {
   try {
     const data = await api('/api/auth/login', { 
       method: 'POST', 
-      body: JSON.stringify({ email, password }) 
+      body: JSON.stringify({ username: email, email, password }) 
     });
     
     token = data.token; 
@@ -2643,7 +2749,6 @@ $('loginBtn').onclick = async () => {
     $('loginView').classList.add('hidden'); 
     $('appView').classList.remove('hidden'); 
     $('logoutBtn').classList.remove('hidden'); 
-    $('topReceptionBtn')?.classList.remove('hidden');
     
     setupProfileUI();
     
@@ -2671,14 +2776,55 @@ document.querySelectorAll('[data-tab]').forEach((button) => {
   button.onclick = () => showTab(button.dataset.tab);
 });
 
+function applyPermissionsUI() {
+  if (!currentUser) return;
+  const isAdmin = currentUser.role === 'administrador';
+  const perms = currentUser.permissions || {};
+
+  const check = (section, action) => {
+    if (isAdmin) return true;
+    return perms[section] && perms[section][action] === true;
+  };
+
+  const menuButtons = document.querySelectorAll('.menu button[data-tab]');
+  menuButtons.forEach((btn) => {
+    const tab = btn.dataset.tab;
+    let visible = true;
+    
+    if (tab === 'reception') {
+      visible = check('orders', 'c');
+    } else if (tab === 'customers') {
+      visible = check('customers', 'r');
+    } else if (tab === 'vehicles') {
+      visible = check('vehicles', 'r');
+    } else if (tab === 'orders') {
+      visible = check('orders', 'r');
+    } else if (tab === 'catalog') {
+      visible = check('catalog', 'r');
+    } else if (tab === 'billing') {
+      visible = check('billing', 'r');
+    } else if (tab === 'whatsapp') {
+      visible = check('whatsapp', 'r');
+    } else if (tab === 'users') {
+      visible = check('users', 'r');
+    } else if (tab === 'auditLogs') {
+      visible = check('audit_logs', 'r');
+    }
+
+    btn.classList.toggle('hidden', !visible);
+  });
+  
+  $('topReceptionBtn')?.classList.toggle('hidden', !check('orders', 'c'));
+}
+
 // Perfil
 function setupProfileUI() {
   if (currentUser) {
     $('userProfile').classList.remove('hidden');
-    $('topReceptionBtn')?.classList.remove('hidden');
     $('userName').textContent = currentUser.name;
     const initials = currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     $('userAvatar').textContent = initials;
+    applyPermissionsUI();
   }
 }
 
@@ -3371,3 +3517,305 @@ if (token) {
     location.reload();
   }); 
 }
+
+// ═══════════════════════════════════
+// GESTIÓN DE USUARIOS
+// ═══════════════════════════════════
+async function loadUsers() {
+  try {
+    systemUsers = await api('/api/users');
+    renderUsers();
+  } catch (err) {
+    console.error('Error al cargar usuarios:', err);
+  }
+}
+
+function renderUsers() {
+  const list = $('usersList');
+  if (!list) return;
+  
+  list.innerHTML = systemUsers.map((u) => {
+    const isSelf = u.id === currentUser.id;
+    const isAdmin = u.role === 'administrador';
+    const permsSummary = [];
+    const sections = {
+      customers: 'Clientes',
+      vehicles: 'Vehículos',
+      orders: 'Órdenes',
+      catalog: 'Catálogo',
+      billing: 'Facturación',
+      whatsapp: 'WhatsApp',
+      users: 'Usuarios',
+      audit_logs: 'Auditoría'
+    };
+    
+    for (const [key, label] of Object.entries(sections)) {
+      const p = u.permissions?.[key] || {};
+      const pList = [];
+      if (p.c) pList.push('C');
+      if (p.r) pList.push('R');
+      if (p.u) pList.push('U');
+      if (p.d) pList.push('D');
+      if (pList.length) {
+        permsSummary.push(`<strong>${label}</strong>: ${pList.join('')}`);
+      }
+    }
+    
+    const roleText = isAdmin ? 'Administrador' : (u.role === 'mecanico' ? 'Mecánico' : 'Personalizado');
+    const roleClass = isAdmin ? 'badge-esperando_aprobacion' : (u.role === 'mecanico' ? 'badge-trabajo_finalizado' : 'badge-recepcion');
+
+    return `
+      <div class="item" style="margin-bottom: 12px;">
+        <header>
+          <strong><i class="fa-solid fa-user-gear"></i> ${escapeHtml(u.name)} (${escapeHtml(u.username)})</strong>
+          <span class="badge ${roleClass}">${roleText}</span>
+        </header>
+        <div class="customer-compact-body">
+          <span><i class="fa-solid fa-envelope"></i> ${escapeHtml(u.email)}</span>
+          <span><i class="fa-solid fa-shield"></i> ${permsSummary.join(' · ') || '<span class="muted">Sin permisos explícitos</span>'}</span>
+          <span><i class="fa-solid fa-calendar"></i> Creado: ${formatDateTime(u.created_at)}</span>
+        </div>
+        <div class="item-footer" style="gap: 8px; margin-top: 10px;">
+          <span class="muted">ID #${u.id}</span>
+          <div class="user-badge-actions">
+            <button class="small secondary" onclick="openUserModal(${u.id})"><i class="fa-solid fa-pen-to-square"></i> Modificar</button>
+            <button class="small secondary" onclick="openResetPasswordModal(${u.id})"><i class="fa-solid fa-key"></i> Contraseña</button>
+            ${!isSelf && u.id !== 1 ? `<button class="small secondary danger-action" onclick="deleteUser(${u.id})"><i class="fa-solid fa-trash"></i> Eliminar</button>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('') || '<div class="empty-state"><i class="fa-solid fa-users"></i><p>No hay otros usuarios registrados.</p></div>';
+}
+
+function openUserModal(userId = null) {
+  editingUserId = userId;
+  $('userEditId').value = userId || '';
+  
+  // Limpiar campos
+  $('userFullName').value = '';
+  $('userUsername').value = '';
+  $('userEmail').value = '';
+  $('userPassword').value = '';
+  $('userRole').value = 'personalizado';
+  
+  // Desmarcar todos los checks
+  document.querySelectorAll('#permissionsTableBody input[type="checkbox"]').forEach(cb => cb.checked = false);
+  
+  if (userId) {
+    const u = systemUsers.find(item => item.id === userId);
+    if (u) {
+      $('userFullName').value = u.name;
+      $('userUsername').value = u.username;
+      $('userEmail').value = u.email;
+      $('userRole').value = u.role;
+      $('userPassword').placeholder = 'Dejar en blanco para no cambiar';
+      $('userPasswordLabel').style.opacity = '0.7';
+      
+      // Marcar permisos del usuario
+      const perms = u.permissions || {};
+      for (const [section, actions] of Object.entries(perms)) {
+        for (const [action, allowed] of Object.entries(actions)) {
+          if (allowed) {
+            const cb = document.querySelector(`#permissionsTableBody tr[data-section="${section}"] input[data-action="${action}"]`);
+            if (cb) cb.checked = true;
+          }
+        }
+      }
+    }
+    $('userModalTitle').innerHTML = '<i class="fa-solid fa-user-pen"></i> Modificar Usuario';
+  } else {
+    $('userPassword').placeholder = 'Mínimo 4 caracteres';
+    $('userPasswordLabel').style.opacity = '1';
+    $('userModalTitle').innerHTML = '<i class="fa-solid fa-user-plus"></i> Registrar Usuario';
+  }
+  
+  $('userModalOverlay').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeUserModal() {
+  $('userModalOverlay').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+async function saveUser() {
+  const name = $('userFullName').value.trim();
+  const username = $('userUsername').value.trim();
+  const email = $('userEmail').value.trim();
+  const password = $('userPassword').value;
+  const role = $('userRole').value;
+  
+  if (!name || !username || !email) {
+    showToast('Alerta', 'Nombre completo, nombre de usuario y correo son obligatorios', 'error');
+    return;
+  }
+  
+  // Validar nombre de usuario alfanumérico
+  const alphanumericRegex = /^[a-zA-Z0-9]+$/;
+  if (!alphanumericRegex.test(username)) {
+    showToast('Usuario inválido', 'El nombre de usuario debe ser alfanumérico (letras y números, sin espacios ni símbolos)', 'error');
+    return;
+  }
+  
+  if (!editingUserId && (!password || password.length < 4)) {
+    showToast('Contraseña corta', 'La contraseña es obligatoria en cuentas nuevas y debe tener al menos 4 caracteres', 'error');
+    return;
+  }
+
+  // Recopilar permisos
+  const permissions = {};
+  document.querySelectorAll('#permissionsTableBody tr[data-section]').forEach((tr) => {
+    const section = tr.dataset.section;
+    permissions[section] = {};
+    tr.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      const action = cb.dataset.action;
+      permissions[section][action] = cb.checked;
+    });
+  });
+
+  const payload = {
+    name,
+    username,
+    email,
+    role,
+    permissions
+  };
+  
+  if (password) {
+    payload.password = password;
+  }
+
+  try {
+    const method = editingUserId ? 'PUT' : 'POST';
+    const path = editingUserId ? `/api/users/${editingUserId}` : '/api/users';
+    
+    await api(path, {
+      method,
+      body: JSON.stringify(payload)
+    });
+    
+    closeUserModal();
+    await loadUsers();
+    showToast('Usuario guardado', `Se guardó correctamente a ${name}`, 'success');
+  } catch (err) {
+    console.error('Error al guardar usuario:', err);
+  }
+}
+
+async function deleteUser(userId) {
+  if (!confirm('¿Estás seguro de que deseas eliminar este usuario del sistema de forma permanente?')) return;
+  
+  try {
+    await api(`/api/users/${userId}`, { method: 'DELETE' });
+    await loadUsers();
+    showToast('Usuario eliminado', 'El usuario fue eliminado correctamente del sistema.', 'success');
+  } catch (err) {
+    console.error('Error al eliminar usuario:', err);
+  }
+}
+
+function openResetPasswordModal(userId) {
+  $('resetPasswordUserId').value = userId;
+  $('resetPasswordNew').value = '';
+  $('resetPasswordModalOverlay').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeResetPasswordModal() {
+  $('resetPasswordModalOverlay').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+async function saveResetPassword() {
+  const userId = $('resetPasswordUserId').value;
+  const password = $('resetPasswordNew').value;
+  
+  if (!password || password.trim().length < 4) {
+    showToast('Contraseña inválida', 'La nueva contraseña debe tener al menos 4 caracteres', 'error');
+    return;
+  }
+  
+  try {
+    await api(`/api/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ password })
+    });
+    closeResetPasswordModal();
+    showToast('Contraseña cambiada', 'Contraseña restablecida exitosamente.', 'success');
+  } catch (err) {
+    console.error('Error al restablecer contraseña:', err);
+  }
+}
+
+// ═══════════════════════════════════
+// HISTORIAL DE AUDITORÍA
+// ═══════════════════════════════════
+async function loadAuditLogs() {
+  const query = $('auditSearchQuery')?.value || '';
+  const section = $('auditSectionFilter')?.value || '';
+  const action = $('auditActionFilter')?.value || '';
+  
+  try {
+    const logs = await api(`/api/audit-logs?query=${encodeURIComponent(query)}&section=${section}&action=${action}`);
+    renderAuditLogs(logs);
+  } catch (err) {
+    console.error('Error al cargar logs de auditoría:', err);
+  }
+}
+
+function renderAuditLogs(logs) {
+  const tbody = $('auditLogsTableBody');
+  if (!tbody) return;
+  
+  tbody.innerHTML = logs.map((log) => {
+    let actionClass = 'audit-action-login';
+    if (log.action === 'CREATE') actionClass = 'audit-action-create';
+    if (log.action === 'UPDATE') actionClass = 'audit-action-update';
+    if (log.action === 'DELETE') actionClass = 'audit-action-delete';
+    
+    return `
+      <tr>
+        <td style="white-space: nowrap; padding: 10px 12px;">${formatDateTime(log.created_at)}</td>
+        <td style="padding: 10px 12px;"><strong>${escapeHtml(log.username || 'Sistema')}</strong><br><small class="muted">${escapeHtml(log.user_name || '')}</small></td>
+        <td style="padding: 10px 12px; text-transform: capitalize;">${escapeHtml(log.section)}</td>
+        <td style="padding: 10px 12px;"><span class="audit-action-tag ${actionClass}">${escapeHtml(log.action)}</span></td>
+        <td style="padding: 10px 12px; max-width: 400px; word-break: break-word;">${escapeHtml(log.description)}</td>
+        <td style="padding: 10px 12px; font-family: monospace;">${escapeHtml(log.ip_address || 'N/D')}</td>
+      </tr>
+    `;
+  }).join('') || '<tr><td colspan="6" style="text-align:center; padding: 24px;" class="muted">No se encontraron registros de auditoría.</td></tr>';
+}
+
+// ═══════════════════════════════════
+// ENLACE DE EVENTOS PARA USUARIOS Y AUDITORÍA
+// ═══════════════════════════════════
+$('openUserModalBtn')?.addEventListener('click', () => openUserModal());
+$('closeUserModal')?.addEventListener('click', closeUserModal);
+$('cancelUserModal')?.addEventListener('click', closeUserModal);
+$('saveUserBtn')?.addEventListener('click', () => saveUser().catch(() => {}));
+$('userModalOverlay')?.addEventListener('click', (event) => {
+  if (event.target === $('userModalOverlay')) closeUserModal();
+});
+
+$('closeResetPasswordModal')?.addEventListener('click', closeResetPasswordModal);
+$('cancelResetPasswordModal')?.addEventListener('click', closeResetPasswordModal);
+$('saveResetPasswordBtn')?.addEventListener('click', () => saveResetPassword().catch(() => {}));
+$('resetPasswordModalOverlay')?.addEventListener('click', (event) => {
+  if (event.target === $('resetPasswordModalOverlay')) closeResetPasswordModal();
+});
+
+$('searchAuditBtn')?.addEventListener('click', () => loadAuditLogs().catch(() => {}));
+$('auditSearchQuery')?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    loadAuditLogs().catch(() => {});
+  }
+});
+$('auditSectionFilter')?.addEventListener('change', () => loadAuditLogs().catch(() => {}));
+$('auditActionFilter')?.addEventListener('change', () => loadAuditLogs().catch(() => {}));
+
+// Exponer funciones globales requeridas por elementos dinámicos
+window.openUserModal = openUserModal;
+window.deleteUser = deleteUser;
+window.openResetPasswordModal = openResetPasswordModal;
+

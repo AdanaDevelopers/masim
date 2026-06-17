@@ -50,8 +50,8 @@
         <h1><i class="fa-solid fa-shield-halved"></i> Acceso al Sistema</h1>
         <p class="login-subtitle">Ingresa tus credenciales para continuar</p>
         <label>
-          <span><i class="fa-solid fa-envelope"></i> Correo Electrónico</span>
-          <input id="loginEmail" type="email" value="admin@masim.local" placeholder="ejemplo@masim.local">
+          <span><i class="fa-solid fa-user"></i> Usuario o Correo</span>
+          <input id="loginEmail" type="text" value="admin" placeholder="admin o ejemplo@masim.local">
         </label>
         <label>
           <span><i class="fa-solid fa-lock"></i> Contraseña</span>
@@ -110,6 +110,12 @@
         </button>
         <button data-tab="whatsapp">
           <i class="fa-brands fa-whatsapp"></i> WhatsApp
+        </button>
+        <button id="menuUsersBtn" class="hidden" data-tab="users">
+          <i class="fa-solid fa-users-gear"></i> Usuarios
+        </button>
+        <button id="menuAuditLogsBtn" class="hidden" data-tab="auditLogs">
+          <i class="fa-solid fa-list-check"></i> Auditoría
         </button>
       </aside>
 
@@ -642,9 +648,216 @@
             </section>
           </div>
         </section>
+
+        <!-- Gestión de Usuarios -->
+        <section id="users" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-solid fa-users-gear"></i> Gestión de Usuarios</h1>
+              <p class="muted">Crea usuarios, restablece contraseñas y asigna permisos específicos por sección.</p>
+            </div>
+            <button id="openUserModalBtn"><i class="fa-solid fa-user-plus"></i> Registrar Usuario</button>
+          </div>
+          <div id="usersList" class="list" style="margin-top: 12px;"></div>
+        </section>
+
+        <!-- Historial de Auditoría -->
+        <section id="auditLogs" class="tab card hidden">
+          <div class="section-toolbar">
+            <div>
+              <h1><i class="fa-solid fa-list-check"></i> Historial de Auditoría</h1>
+              <p class="muted">Consulta el historial de acciones y auditoría del sistema.</p>
+            </div>
+          </div>
+          <div class="orders-toolbar" style="margin-top: 10px;">
+            <label class="orders-search">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input id="auditSearchQuery" placeholder="Buscar por descripción, usuario o IP...">
+            </label>
+            <label style="max-width: 150px;">
+              <span>Sección</span>
+              <select id="auditSectionFilter">
+                <option value="">Todas</option>
+                <option value="auth">Acceso / Auth</option>
+                <option value="customers">Clientes</option>
+                <option value="vehicles">Vehículos</option>
+                <option value="orders">Órdenes / Recept.</option>
+                <option value="catalog">Catálogo</option>
+                <option value="billing">Facturación</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="users">Usuarios</option>
+              </select>
+            </label>
+            <label style="max-width: 150px;">
+              <span>Acción</span>
+              <select id="auditActionFilter">
+                <option value="">Todas</option>
+                <option value="LOGIN">LOGIN</option>
+                <option value="CREATE">CREATE (Crear)</option>
+                <option value="UPDATE">UPDATE (Actualizar)</option>
+                <option value="DELETE">DELETE (Eliminar)</option>
+              </select>
+            </label>
+            <div class="form-group-btn" style="margin-bottom: 0;">
+              <button id="searchAuditBtn" style="padding: 10px 16px;"><i class="fa-solid fa-magnifying-glass"></i> Buscar</button>
+            </div>
+          </div>
+          
+          <div style="overflow-x: auto; margin-top: 16px; border-radius: 12px; border: 1px solid var(--line);">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>Fecha/Hora</th>
+                  <th>Usuario</th>
+                  <th>Sección</th>
+                  <th>Acción</th>
+                  <th>Descripción</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody id="auditLogsTableBody">
+                <!-- Se llena dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </section>
   </main>
+
+  <!-- Modales de Usuarios -->
+  <div id="userModalOverlay" class="modal-overlay hidden">
+    <div class="modal-card user-modal" role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="userModalTitle"><i class="fa-solid fa-user-plus"></i> Registrar usuario</h2>
+          <p class="muted">Captura los datos del usuario y sus permisos del sistema.</p>
+        </div>
+        <button id="closeUserModal" type="button" class="icon-button" aria-label="Cerrar modal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="new-customer-panel modal-form-panel">
+        <input type="hidden" id="userEditId">
+        <div class="subsection-title">Datos de Acceso</div>
+        <div class="form-row compact-row">
+          <label><span>Nombre completo</span><input id="userFullName" placeholder="Nombre completo del usuario"></label>
+          <label><span>Usuario alfanumérico</span><input id="userUsername" placeholder="Ej. operador123"></label>
+          <label><span>Correo electrónico</span><input id="userEmail" type="email" placeholder="correo@taller.com"></label>
+          <label id="userPasswordLabel"><span>Contraseña</span><input id="userPassword" type="password" placeholder="••••••••"></label>
+        </div>
+        <div class="form-row compact-row">
+          <label>
+            <span>Rol base (opcional)</span>
+            <select id="userRole">
+              <option value="personalizado" selected>Personalizado (Basado en permisos)</option>
+              <option value="administrador">Administrador (Acceso total)</option>
+              <option value="mecanico">Mecánico (Asignable a órdenes)</option>
+            </select>
+          </label>
+        </div>
+        
+        <div class="subsection-title">Matriz de Permisos por Sección</div>
+        <div class="permissions-container" style="overflow-x:auto;">
+          <table class="perms-table" style="width:100%; border-collapse:collapse; margin-top:8px;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--line);">
+                <th style="text-align:left; padding:8px 12px;">Sección</th>
+                <th style="text-align:center; padding:8px 12px;">Crear (C)</th>
+                <th style="text-align:center; padding:8px 12px;">Leer (R)</th>
+                <th style="text-align:center; padding:8px 12px;">Actualizar (U)</th>
+                <th style="text-align:center; padding:8px 12px;">Eliminar (D)</th>
+              </tr>
+            </thead>
+            <tbody id="permissionsTableBody">
+              <tr data-section="customers" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>Clientes</strong></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="c"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="u"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="d"></td>
+              </tr>
+              <tr data-section="vehicles" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>Vehículos</strong></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="c"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="u"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="d"></td>
+              </tr>
+              <tr data-section="orders" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>Órdenes y Adicionales</strong></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="c"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="u"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="d"></td>
+              </tr>
+              <tr data-section="catalog" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>Catálogo</strong></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="c"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="u"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="d"></td>
+              </tr>
+              <tr data-section="billing" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>Facturación</strong></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="c"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="u"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="d"></td>
+              </tr>
+              <tr data-section="whatsapp" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>WhatsApp</strong></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="c"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="u"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="d"></td>
+              </tr>
+              <tr data-section="users" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>Usuarios</strong></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="c"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="u"></td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="d"></td>
+              </tr>
+              <tr data-section="audit_logs" style="border-bottom:1px solid var(--line);">
+                <td style="padding:8px 12px;"><strong>Auditoría</strong></td>
+                <td style="text-align:center; padding:8px 12px;" class="muted">-</td>
+                <td style="text-align:center; padding:8px 12px;"><input type="checkbox" data-action="r"></td>
+                <td style="text-align:center; padding:8px 12px;" class="muted">-</td>
+                <td style="text-align:center; padding:8px 12px;" class="muted">-</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="cancelUserModal" type="button" class="secondary"><i class="fa-solid fa-ban"></i> Cancelar</button>
+        <button id="saveUserBtn" type="button"><i class="fa-solid fa-floppy-disk"></i> Guardar usuario</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="resetPasswordModalOverlay" class="modal-overlay hidden">
+    <div class="modal-card reset-password-modal" style="max-width: 400px;" role="dialog" aria-modal="true" aria-labelledby="resetPasswordModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="resetPasswordModalTitle"><i class="fa-solid fa-key"></i> Restablecer Contraseña</h2>
+        </div>
+        <button id="closeResetPasswordModal" type="button" class="icon-button" aria-label="Cerrar modal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="new-customer-panel modal-form-panel">
+        <input type="hidden" id="resetPasswordUserId">
+        <div class="form-row">
+          <label style="width: 100%;">
+            <span>Nueva contraseña (mínimo 4 caracteres)</span>
+            <input id="resetPasswordNew" type="password" placeholder="Ingresa la nueva contraseña">
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="cancelResetPasswordModal" type="button" class="secondary"><i class="fa-solid fa-ban"></i> Cancelar</button>
+        <button id="saveResetPasswordBtn" type="button"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
 
   <!-- CONTENEDOR FLOTANTE PARA TOASTS -->
   <div id="orderModal" class="hidden"></div>

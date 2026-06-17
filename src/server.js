@@ -33,6 +33,8 @@ app.use('/api/vehicles', require('./routes/vehicles'));
 app.use('/api/catalog', require('./routes/catalog'));
 app.use('/api/vin', require('./routes/vin'));
 app.use('/api/vehicle-reference', require('./routes/vehicleReference'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/audit-logs', require('./routes/auditLogs'));
 
 app.get('/api/pdf/work-orders/:id/quote', auth, (req, res) => {
   const order = getWorkOrderDocument(req.params.id);
@@ -76,6 +78,8 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({ error: error.message || 'Error interno' });
 });
 
+const whatsapp = require('./services/whatsapp');
 app.listen(port, () => {
   console.log(`Masim escuchando en http://localhost:${port}`);
+  whatsapp.start().catch((err) => console.error('Error al iniciar WhatsApp automáticamente:', err));
 });

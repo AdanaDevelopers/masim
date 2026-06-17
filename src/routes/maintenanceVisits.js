@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db/masim');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/roles');
+const checkPermission = require('../middleware/permission');
+const { logAction } = require('../services/audit');
 
 const router = express.Router();
 router.use(auth);
@@ -32,7 +33,7 @@ function validateVisitPayload(body, partial = false) {
   return { serviceType, scheduledDate, scheduledMileage, notes };
 }
 
-router.get('/', (req, res) => {
+router.get('/', checkPermission('orders', 'r'), (req, res) => {
   const filters = [];
   const params = [];
   if (req.query.vehicle_id) {
@@ -57,7 +58,7 @@ router.get('/', (req, res) => {
   res.json(rows);
 });
 
-router.post('/', requireRole('administrador'), (req, res) => {
+router.post('/', checkPermission('orders', 'c'), (req, res) => {
   const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(req.body.vehicle_id);
   if (!vehicle) return res.status(404).json({ error: 'Vehiculo no encontrado' });
   const payload = validateVisitPayload(req.body);
@@ -67,10 +68,13 @@ router.post('/', requireRole('administrador'), (req, res) => {
     INSERT INTO maintenance_visits (customer_id, vehicle_id, source_work_order_id, scheduled_date, scheduled_mileage, service_type, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(vehicle.customer_id, vehicle.id, req.body.source_work_order_id || null, payload.scheduledDate, payload.scheduledMileage, payload.serviceType, payload.notes);
+  
+  logAction(req.user.id, 'CREATE', 'orders', `Programada próxima visita de servicio (${payload.serviceType}) para vehículo ID: ${vehicle.id}`, req.ip);
+  
   res.status(201).json(getVisit(result.lastInsertRowid));
 });
 
-router.put('/:id', requireRole('administrador'), (req, res) => {
+router.put('/:id', checkPermission('orders', 'u'), (req, res) => {
   const visit = db.prepare('SELECT * FROM maintenance_visits WHERE id = ?').get(req.params.id);
   if (!visit) return res.status(404).json({ error: 'Visita no encontrada' });
   if (visit.status !== 'programada') return res.status(400).json({ error: 'Solo visitas programadas pueden modificarse' });
@@ -88,20 +92,29 @@ router.put('/:id', requireRole('administrador'), (req, res) => {
     payload.notes ?? visit.notes,
     visit.id
   );
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Modificada próxima visita de servicio programada (ID: ${visit.id})`, req.ip);
+  
   res.json(getVisit(visit.id));
 });
 
-router.post('/:id/complete', requireRole('administrador'), (req, res) => {
+router.post('/:id/complete', checkPermission('orders', 'u'), (req, res) => {
   const visit = db.prepare('SELECT * FROM maintenance_visits WHERE id = ?').get(req.params.id);
   if (!visit) return res.status(404).json({ error: 'Visita no encontrada' });
   db.prepare("UPDATE maintenance_visits SET status = 'realizada', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(visit.id);
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Marcada como REALIZADA visita de servicio programada (ID: ${visit.id})`, req.ip);
+  
   res.json(getVisit(visit.id));
 });
 
-router.post('/:id/cancel', requireRole('administrador'), (req, res) => {
+router.post('/:id/cancel', checkPermission('orders', 'u'), (req, res) => {
   const visit = db.prepare('SELECT * FROM maintenance_visits WHERE id = ?').get(req.params.id);
   if (!visit) return res.status(404).json({ error: 'Visita no encontrada' });
   db.prepare("UPDATE maintenance_visits SET status = 'cancelada', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(visit.id);
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Marcada como CANCELADA visita de servicio programada (ID: ${visit.id})`, req.ip);
+  
   res.json(getVisit(visit.id));
 });
 

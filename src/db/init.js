@@ -12,15 +12,15 @@ migrate(db);
 
 const passwordHash = bcrypt.hashSync('Admin123!', 10);
 db.prepare(`
-  INSERT OR IGNORE INTO users (name, email, password_hash, role)
-  VALUES (?, ?, ?, ?)
-`).run('Administrador Masim', 'admin@masim.local', passwordHash, 'administrador');
+  INSERT OR IGNORE INTO users (name, email, username, password_hash, role)
+  VALUES (?, ?, ?, ?, ?)
+`).run('Administrador Masim', 'admin@masim.local', 'admin', passwordHash, 'administrador');
 
 const mechanicHash = bcrypt.hashSync('Mecanico123!', 10);
 db.prepare(`
-  INSERT OR IGNORE INTO users (name, email, password_hash, role)
-  VALUES (?, ?, ?, ?)
-`).run('Mecanico Demo', 'mecanico@masim.local', mechanicHash, 'mecanico');
+  INSERT OR IGNORE INTO users (name, email, username, password_hash, role)
+  VALUES (?, ?, ?, ?, ?)
+`).run('Mecanico Demo', 'mecanico@masim.local', 'mecanico', mechanicHash, 'mecanico');
 
 const seedCatalog = db.prepare(`
   INSERT OR IGNORE INTO catalog (id, description, type, public_price, internal_cost)

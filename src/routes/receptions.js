@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db/masim');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/roles');
+const checkPermission = require('../middleware/permission');
+const { logAction } = require('../services/audit');
 const { TAX_RATE, CURRENCY } = require('../services/totals');
 const { nextWorkOrderFolio } = require('../services/folios');
 const { insertCustomer } = require('../services/customers');
@@ -10,7 +11,7 @@ const { insertVehicle } = require('../services/vehicles');
 const router = express.Router();
 router.use(auth);
 
-router.post('/', requireRole('administrador'), (req, res, next) => {
+router.post('/', checkPermission('orders', 'c'), (req, res, next) => {
   try {
     const tx = db.transaction((body) => {
       let customerId = body.customerId;
@@ -54,6 +55,9 @@ router.post('/', requireRole('administrador'), (req, res, next) => {
 
     const result = tx(req.body);
     const workOrder = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(result.workOrderId);
+    
+    logAction(req.user.id, 'CREATE', 'orders', `Recepción y orden creadas Folio: ${workOrder.folio} (ID: ${result.workOrderId})`, req.ip);
+    
     res.status(201).json({ ...result, workOrder });
   } catch (error) {
     next(error);

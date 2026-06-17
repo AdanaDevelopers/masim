@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const express = require('express');
 const db = require('../db/masim');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/roles');
+const checkPermission = require('../middleware/permission');
+const { logAction } = require('../services/audit');
 const { calculateTotals, TAX_RATE } = require('../services/totals');
 const { assertNotClosed } = require('../services/workOrderState');
 
@@ -28,27 +29,31 @@ function fullSupplement(id) {
   return supplement;
 }
 
-router.get('/:id', (req, res) => {
+router.get('/:id', checkPermission('orders', 'r'), (req, res) => {
   const supplement = fullSupplement(req.params.id);
   if (!supplement) return res.status(404).json({ error: 'Adicional no encontrado' });
   res.json(supplement);
 });
 
-router.post('/', (req, res) => {
+router.post('/', checkPermission('orders', 'c'), (req, res) => {
   const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.body.work_order_id);
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
   assertNotClosed(order.status);
   if (!['ot_activa', 'trabajo_finalizado'].includes(order.status)) {
     return res.status(400).json({ error: 'Los adicionales solo aplican a OT activa o finalizada' });
   }
+  const folio = nextSupplementFolio(order.id);
   const result = db.prepare(`
     INSERT INTO work_order_supplements (work_order_id, folio_adicional, status, description, tax_rate, created_by)
     VALUES (?, ?, 'borrador', ?, ?, ?)
-  `).run(order.id, nextSupplementFolio(order.id), req.body.description || null, TAX_RATE, req.user.id);
+  `).run(order.id, folio, req.body.description || null, TAX_RATE, req.user.id);
+  
+  logAction(req.user.id, 'CREATE', 'orders', `Adicional creado Folio: ${folio} para orden Folio: ${order.folio} (ID: ${result.lastInsertRowid})`, req.ip);
+  
   res.status(201).json(fullSupplement(result.lastInsertRowid));
 });
 
-router.post('/:id/items', requireRole('administrador'), (req, res) => {
+router.post('/:id/items', checkPermission('orders', 'u'), (req, res) => {
   const supplement = db.prepare('SELECT * FROM work_order_supplements WHERE id = ?').get(req.params.id);
   if (!supplement) return res.status(404).json({ error: 'Adicional no encontrado' });
   if (supplement.status !== 'borrador') return res.status(400).json({ error: 'Solo adicional en borrador es editable' });
@@ -65,19 +70,29 @@ router.post('/:id/items', requireRole('administrador'), (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(supplement.id, req.body.item_id || null, description, type, quantity, appliedPrice, req.body.notes || null);
   recalc(supplement.id);
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Concepto agregado a Adicional Folio: ${supplement.folio_adicional}: ${description}`, req.ip);
+  
   res.status(201).json(fullSupplement(supplement.id));
 });
 
-router.delete('/:id/items/:itemId', requireRole('administrador'), (req, res) => {
+router.delete('/:id/items/:itemId', checkPermission('orders', 'u'), (req, res) => {
   const supplement = db.prepare('SELECT * FROM work_order_supplements WHERE id = ?').get(req.params.id);
   if (!supplement) return res.status(404).json({ error: 'Adicional no encontrado' });
   if (supplement.status !== 'borrador') return res.status(400).json({ error: 'Solo adicional en borrador es editable' });
+  
+  const item = db.prepare('SELECT description FROM work_order_supplement_items WHERE id = ?').get(req.params.itemId);
   db.prepare('DELETE FROM work_order_supplement_items WHERE id = ? AND supplement_id = ?').run(req.params.itemId, supplement.id);
   recalc(supplement.id);
+  
+  if (item) {
+    logAction(req.user.id, 'UPDATE', 'orders', `Concepto eliminado de Adicional Folio: ${supplement.folio_adicional}: ${item.description}`, req.ip);
+  }
+  
   res.json(fullSupplement(supplement.id));
 });
 
-router.post('/:id/send-approval', requireRole('administrador'), (req, res) => {
+router.post('/:id/send-approval', checkPermission('orders', 'u'), (req, res) => {
   const supplement = db.prepare('SELECT * FROM work_order_supplements WHERE id = ?').get(req.params.id);
   if (!supplement) return res.status(404).json({ error: 'Adicional no encontrado' });
   if (!['borrador', 'esperando_aprobacion'].includes(supplement.status)) return res.status(400).json({ error: 'Solo borrador o pendiente puede enviarse' });
@@ -89,16 +104,22 @@ router.post('/:id/send-approval', requireRole('administrador'), (req, res) => {
   const existing = db.prepare("SELECT token FROM public_approval_tokens WHERE target_type = 'supplement' AND target_id = ? AND status = 'pendiente' ORDER BY id DESC").get(supplement.id);
   const token = existing ? existing.token : crypto.randomBytes(24).toString('hex');
   if (!existing) db.prepare('INSERT INTO public_approval_tokens (token, target_type, target_id) VALUES (?, ?, ?)').run(token, 'supplement', supplement.id);
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Adicional Folio: ${supplement.folio_adicional} enviado para aprobación del cliente`, req.ip);
+  
   res.status(201).json({ token, url: `/approve.html?token=${token}`, supplement: fullSupplement(supplement.id) });
 });
 
-router.post('/:id/status', requireRole('administrador'), (req, res) => {
+router.post('/:id/status', checkPermission('orders', 'u'), (req, res) => {
   const supplement = db.prepare('SELECT * FROM work_order_supplements WHERE id = ?').get(req.params.id);
   if (!supplement) return res.status(404).json({ error: 'Adicional no encontrado' });
   if (supplement.status !== 'esperando_aprobacion') return res.status(400).json({ error: 'El complemento debe estar esperando aprobacion' });
   if (!['aprobado', 'rechazado'].includes(req.body.status)) return res.status(400).json({ error: 'Estado invalido' });
   db.prepare('UPDATE work_order_supplements SET status = ?, approved_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE approved_at END, rejected_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE rejected_at END, rejection_note = CASE WHEN ? THEN ? ELSE rejection_note END, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .run(req.body.status, req.body.status === 'aprobado' ? 1 : 0, req.body.status === 'rechazado' ? 1 : 0, req.body.status === 'rechazado' ? 1 : 0, req.body.note || null, supplement.id);
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Estado de Adicional Folio: ${supplement.folio_adicional} cambiado a ${req.body.status}`, req.ip);
+  
   res.json(fullSupplement(supplement.id));
 });
 

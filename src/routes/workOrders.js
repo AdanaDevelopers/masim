@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const express = require('express');
 const db = require('../db/masim');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/roles');
+const checkPermission = require('../middleware/permission');
+const { logAction } = require('../services/audit');
 const { calculateTotals, TAX_RATE, CURRENCY, finalWorkOrderTotal } = require('../services/totals');
 const { assertTransition, assertEditable, assertNotClosed } = require('../services/workOrderState');
 const { nextWorkOrderFolio } = require('../services/folios');
@@ -77,7 +78,7 @@ function normalizeMaintenanceVisit(body) {
   return { serviceType, scheduledDate, scheduledMileage, notes };
 }
 
-router.get('/', (req, res) => {
+router.get('/', checkPermission('orders', 'r'), (req, res) => {
   const rows = db.prepare(`
     SELECT wo.*, c.name AS customer_name, c.name,
       c.customer_type, c.contact_name, c.phone, c.whatsapp,
@@ -91,7 +92,7 @@ router.get('/', (req, res) => {
 });
 
 router.get('/mechanic/my-active/list', (req, res) => {
-  if (req.user.role !== 'mecanico') return res.status(403).json({ error: 'Solo mecanicos' });
+  // Retorna órdenes asignadas activas de cualquier usuario que ingrese
   res.json(db.prepare(`
     SELECT wo.*, c.name AS customer_name, v.make, v.model, v.year, v.plates
     FROM work_orders wo
@@ -103,25 +104,29 @@ router.get('/mechanic/my-active/list', (req, res) => {
   `).all(req.user.id));
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', checkPermission('orders', 'r'), (req, res) => {
   const order = getFullOrder(req.params.id);
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
   res.json(order);
 });
 
-router.post('/', requireRole('administrador'), (req, res) => {
+router.post('/', checkPermission('orders', 'c'), (req, res) => {
   const { customer_id, vehicle_id, symptom, reception_inventory } = req.body;
   if (!customer_id || !vehicle_id) return res.status(400).json({ error: 'Cliente y vehiculo son requeridos' });
+  const folio = nextWorkOrderFolio();
   const result = db.prepare(`
     INSERT INTO work_orders (folio, customer_id, vehicle_id, status, symptom, reception_inventory, tax_rate, currency, created_by)
     VALUES (?, ?, ?, 'recepcion', ?, ?, ?, ?, ?)
-  `).run(nextWorkOrderFolio(), customer_id, vehicle_id, symptom || null, reception_inventory ? JSON.stringify(reception_inventory) : null, TAX_RATE, CURRENCY, req.user.id);
+  `).run(folio, customer_id, vehicle_id, symptom || null, reception_inventory ? JSON.stringify(reception_inventory) : null, TAX_RATE, CURRENCY, req.user.id);
   db.prepare('INSERT INTO work_order_status_history (work_order_id, to_status, changed_by, note) VALUES (?, ?, ?, ?)')
     .run(result.lastInsertRowid, 'recepcion', req.user.id, 'Recepcion creada');
+  
+  logAction(req.user.id, 'CREATE', 'orders', `Orden de trabajo creada Folio: ${folio} (ID: ${result.lastInsertRowid})`, req.ip);
+  
   res.status(201).json(getFullOrder(result.lastInsertRowid));
 });
 
-router.post('/:id/items', requireRole('administrador'), (req, res, next) => {
+router.post('/:id/items', checkPermission('orders', 'u'), (req, res, next) => {
   try {
     const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
@@ -152,13 +157,16 @@ router.post('/:id/items', requireRole('administrador'), (req, res, next) => {
         .run(order.id, 'recepcion', 'cotizacion_borrador', req.user.id, 'Primer item de cotizacion');
     }
     recalc(order.id);
+    
+    logAction(req.user.id, 'UPDATE', 'orders', `Agregado concepto a Orden Folio: ${order.folio}: ${description}`, req.ip);
+    
     res.status(201).json(getFullOrder(order.id));
   } catch (error) {
     next(error);
   }
 });
 
-router.put('/:id/items/:itemId', requireRole('administrador'), (req, res, next) => {
+router.put('/:id/items/:itemId', checkPermission('orders', 'u'), (req, res, next) => {
   try {
     const order = getEditableOrder(req.params.id);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
@@ -174,13 +182,16 @@ router.put('/:id/items/:itemId', requireRole('administrador'), (req, res, next) 
       WHERE id = ? AND work_order_id = ?
     `).run(quantity, appliedPrice, req.body.notes ?? item.notes, item.id, order.id);
     recalc(order.id);
+    
+    logAction(req.user.id, 'UPDATE', 'orders', `Concepto modificado en Orden Folio: ${order.folio}: ${item.description}`, req.ip);
+    
     res.json(getFullOrder(order.id));
   } catch (error) {
     next(error);
   }
 });
 
-router.delete('/:id/items/:itemId', requireRole('administrador'), (req, res, next) => {
+router.delete('/:id/items/:itemId', checkPermission('orders', 'u'), (req, res, next) => {
   try {
     const order = getEditableOrder(req.params.id);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
@@ -188,13 +199,16 @@ router.delete('/:id/items/:itemId', requireRole('administrador'), (req, res, nex
     if (!item) return res.status(404).json({ error: 'Concepto no encontrado' });
     db.prepare('DELETE FROM order_items WHERE id = ? AND work_order_id = ?').run(item.id, order.id);
     recalc(order.id);
+    
+    logAction(req.user.id, 'UPDATE', 'orders', `Concepto eliminado de Orden Folio: ${order.folio}: ${item.description}`, req.ip);
+    
     res.json(getFullOrder(order.id));
   } catch (error) {
     next(error);
   }
 });
 
-router.put('/:id/discount', requireRole('administrador'), (req, res, next) => {
+router.put('/:id/discount', checkPermission('orders', 'u'), (req, res, next) => {
   try {
     const order = getEditableOrder(req.params.id);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
@@ -209,13 +223,16 @@ router.put('/:id/discount', requireRole('administrador'), (req, res, next) => {
       WHERE id = ?
     `).run(discountType, discountValue, req.body.adjustment_note || null, order.id);
     recalc(order.id);
+    
+    logAction(req.user.id, 'UPDATE', 'orders', `Descuento aplicado en Orden Folio: ${order.folio} (${discountType}: ${discountValue})`, req.ip);
+    
     res.json(getFullOrder(order.id));
   } catch (error) {
     next(error);
   }
 });
 
-router.post('/:id/status', requireRole('administrador'), (req, res, next) => {
+router.post('/:id/status', checkPermission('orders', 'u'), (req, res, next) => {
   try {
     const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
@@ -232,18 +249,24 @@ router.post('/:id/status', requireRole('administrador'), (req, res, next) => {
     `).run(req.body.status, req.body.status, 'ot_activa', manualApproval ? 1 : 0, req.user.id, manualApproval ? 1 : 0, order.id);
     db.prepare('INSERT INTO work_order_status_history (work_order_id, from_status, to_status, changed_by, note) VALUES (?, ?, ?, ?, ?)')
       .run(order.id, order.status, req.body.status, req.user.id, req.body.note || (manualApproval ? 'Aprobacion manual confirmada' : null));
+    
+    logAction(req.user.id, 'UPDATE', 'orders', `Estado de Orden Folio: ${order.folio} cambiado de ${order.status} a ${req.body.status}`, req.ip);
+    
     res.json(getFullOrder(order.id));
   } catch (error) {
     next(error);
   }
 });
 
-router.post('/:id/approval-token', requireRole('administrador'), (req, res) => {
+router.post('/:id/approval-token', checkPermission('orders', 'u'), (req, res) => {
   const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
   if (order.status !== 'esperando_aprobacion') return res.status(400).json({ error: 'La cotizacion debe estar esperando aprobacion' });
   const itemCount = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE work_order_id = ?').get(order.id).count;
   if (!itemCount) return res.status(400).json({ error: 'Agrega conceptos antes de enviar aprobacion' });
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Generado enlace de aprobación digital para Orden Folio: ${order.folio}`, req.ip);
+
   const existing = db.prepare("SELECT token FROM public_approval_tokens WHERE target_type = 'work_order' AND target_id = ? AND status = 'pendiente' ORDER BY id DESC").get(order.id);
   if (existing) return res.json({ token: existing.token, url: `/approve.html?token=${existing.token}` });
   const token = crypto.randomBytes(24).toString('hex');
@@ -251,12 +274,15 @@ router.post('/:id/approval-token', requireRole('administrador'), (req, res) => {
   res.status(201).json({ token, url: `/approve.html?token=${token}` });
 });
 
-router.post('/:id/assign', requireRole('administrador'), (req, res) => {
+router.post('/:id/assign', checkPermission('orders', 'u'), (req, res) => {
   const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
-  const mechanic = db.prepare('SELECT * FROM users WHERE id = ? AND role = ?').get(req.body.mechanic_id, 'mecanico');
-  if (!order || !mechanic) return res.status(404).json({ error: 'Orden o mecanico no encontrado' });
-  if (order.status !== 'ot_activa') return res.status(400).json({ error: 'Solo se asignan mecanicos en OT activa' });
+  const mechanic = db.prepare('SELECT * FROM users WHERE id = ?').get(req.body.mechanic_id);
+  if (!order || !mechanic) return res.status(404).json({ error: 'Orden o usuario no encontrado' });
+  if (order.status !== 'ot_activa') return res.status(400).json({ error: 'Solo se asignan tecnicos en OT activa' });
   db.prepare('INSERT OR IGNORE INTO mechanic_assignments (work_order_id, mechanic_id) VALUES (?, ?)').run(order.id, mechanic.id);
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Asignado técnico ${mechanic.username || mechanic.name} a Orden Folio: ${order.folio}`, req.ip);
+
   res.json(getFullOrder(order.id));
 });
 
@@ -264,17 +290,34 @@ router.post('/:id/finalize', (req, res) => {
   const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
   if (order.status !== 'ot_activa') return res.status(400).json({ error: 'Solo una OT activa puede finalizarse' });
-  if (req.user.role === 'mecanico') {
-    const assigned = db.prepare('SELECT id FROM mechanic_assignments WHERE work_order_id = ? AND mechanic_id = ?').get(order.id, req.user.id);
-    if (!assigned) return res.status(403).json({ error: 'OT no asignada al mecanico' });
+  
+  // Validar permisos: tiene orders:u o está asignado
+  const user = db.prepare('SELECT role, permissions FROM users WHERE id = ?').get(req.user.id);
+  let hasOrderUpdate = user && user.role === 'administrador';
+  if (!hasOrderUpdate) {
+    try {
+      const perms = JSON.parse(user?.permissions || '{}');
+      hasOrderUpdate = perms.orders && perms.orders.u === true;
+    } catch(e) {}
   }
+
+  if (!hasOrderUpdate) {
+    const assigned = db.prepare('SELECT id FROM mechanic_assignments WHERE work_order_id = ? AND mechanic_id = ?').get(order.id, req.user.id);
+    if (!assigned) {
+      return res.status(403).json({ error: 'No tienes permisos para actualizar esta orden ni estás asignado a ella' });
+    }
+  }
+
   db.prepare('UPDATE work_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('trabajo_finalizado', order.id);
   db.prepare('INSERT INTO work_order_status_history (work_order_id, from_status, to_status, changed_by, note) VALUES (?, ?, ?, ?, ?)')
     .run(order.id, order.status, 'trabajo_finalizado', req.user.id, req.body.note || 'Trabajo finalizado');
+  
+  logAction(req.user.id, 'UPDATE', 'orders', `Trabajo finalizado para Orden Folio: ${order.folio}`, req.ip);
+
   res.json(getFullOrder(order.id));
 });
 
-router.post('/:id/close', requireRole('administrador'), (req, res, next) => {
+router.post('/:id/close', checkPermission('orders', 'u'), (req, res, next) => {
   try {
     const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
     if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
@@ -301,7 +344,41 @@ router.post('/:id/close', requireRole('administrador'), (req, res, next) => {
         .run(order.id, order.status, 'cerrada', req.user.id, `Pago ${req.body.method}`);
     })();
 
+    logAction(req.user.id, 'UPDATE', 'orders', `Orden de trabajo Folio: ${order.folio} CERRADA y cobrada mediante ${req.body.method} (Total: ${finalTotal})`, req.ip);
+
     res.json({ ...getFullOrder(order.id), final_total: finalTotal });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id', checkPermission('orders', 'd'), (req, res, next) => {
+  try {
+    const orderId = req.params.id;
+    const order = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(orderId);
+    if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+
+    // Validar si tiene facturas asociadas
+    const invoiceCount = db.prepare('SELECT COUNT(*) AS count FROM invoices WHERE work_order_id = ?').get(orderId).count;
+    if (invoiceCount > 0) {
+      return res.status(400).json({ error: 'No se puede eliminar la orden porque tiene facturas asociadas.' });
+    }
+
+    // Validar si tiene pagos registrados
+    const paymentCount = db.prepare('SELECT COUNT(*) AS count FROM payments WHERE work_order_id = ?').get(orderId).count;
+    if (paymentCount > 0) {
+      return res.status(400).json({ error: 'No se puede eliminar la orden porque tiene pagos registrados.' });
+    }
+
+    // Desligar visitas de mantenimiento vinculadas para evitar fallas de claves foráneas
+    db.prepare('UPDATE maintenance_visits SET source_work_order_id = NULL WHERE source_work_order_id = ?').run(orderId);
+
+    // Eliminar la orden de trabajo. Las relaciones con ON DELETE CASCADE se limpiarán automáticamente en SQLite
+    db.prepare('DELETE FROM work_orders WHERE id = ?').run(orderId);
+
+    logAction(req.user.id, 'DELETE', 'orders', `Orden de trabajo eliminada Folio: ${order.folio} (ID: ${order.id})`, req.ip);
+
+    res.json({ success: true, message: `Orden ${order.folio} eliminada correctamente.` });
   } catch (error) {
     next(error);
   }

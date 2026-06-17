@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db/masim');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/roles');
+const checkPermission = require('../middleware/permission');
+const { logAction } = require('../services/audit');
 const facturama = require('../services/facturama');
 const { buildCfdiPayload, extractUuid, normalizeRfc } = require('../services/invoicing');
 
@@ -47,11 +48,11 @@ function invoiceRow(id) {
   `).get(id);
 }
 
-router.get('/issuer', requireRole('administrador'), (req, res) => {
+router.get('/issuer', checkPermission('billing', 'r'), (req, res) => {
   res.json(db.prepare('SELECT * FROM billing_issuer_settings WHERE id = 1').get() || null);
 });
 
-router.put('/issuer', requireRole('administrador'), (req, res, next) => {
+router.put('/issuer', checkPermission('billing', 'u'), (req, res, next) => {
   try {
     const body = req.body || {};
     const rfc = normalizeRfc(requireField(body, 'rfc', 'RFC'));
@@ -70,13 +71,16 @@ router.put('/issuer', requireRole('administrador'), (req, res, next) => {
         expedition_place = excluded.expedition_place,
         updated_at = CURRENT_TIMESTAMP
     `).run(rfc, legalName, fiscalRegime, expeditionPlace);
+    
+    logAction(req.user.id, 'UPDATE', 'billing', `Datos fiscales del taller actualizados (RFC: ${rfc})`, req.ip);
+    
     res.json(db.prepare('SELECT * FROM billing_issuer_settings WHERE id = 1').get());
   } catch (error) {
     next(error);
   }
 });
 
-router.get('/certificate', requireRole('administrador'), (req, res) => {
+router.get('/certificate', checkPermission('billing', 'r'), (req, res) => {
   const issuer = db.prepare('SELECT * FROM billing_issuer_settings WHERE id = 1').get();
   const certificate = issuer
     ? db.prepare('SELECT * FROM billing_certificates WHERE rfc = ?').get(normalizeRfc(issuer.rfc))
@@ -84,7 +88,7 @@ router.get('/certificate', requireRole('administrador'), (req, res) => {
   res.json(publicCertificate(certificate));
 });
 
-router.post('/certificate', requireRole('administrador'), async (req, res, next) => {
+router.post('/certificate', checkPermission('billing', 'c'), async (req, res, next) => {
   try {
     const body = req.body || {};
     const rfc = normalizeRfc(requireField(body, 'rfc', 'RFC'));
@@ -106,13 +110,16 @@ router.post('/certificate', requireRole('administrador'), async (req, res, next)
         status = 'activo',
         updated_at = CURRENT_TIMESTAMP
     `).run(rfc, remote?.CsdExpirationDate || null, remote?.UploadDate || new Date().toISOString());
+    
+    logAction(req.user.id, 'CREATE', 'billing', `Cargado certificado CSD para RFC: ${rfc}`, req.ip);
+    
     res.status(201).json(publicCertificate(db.prepare('SELECT * FROM billing_certificates WHERE rfc = ?').get(rfc)));
   } catch (error) {
     next(error);
   }
 });
 
-router.put('/certificate', requireRole('administrador'), async (req, res, next) => {
+router.put('/certificate', checkPermission('billing', 'u'), async (req, res, next) => {
   try {
     const body = req.body || {};
     const rfc = normalizeRfc(requireField(body, 'rfc', 'RFC'));
@@ -134,25 +141,31 @@ router.put('/certificate', requireRole('administrador'), async (req, res, next) 
         status = 'activo',
         updated_at = CURRENT_TIMESTAMP
     `).run(rfc, remote?.CsdExpirationDate || null, remote?.UploadDate || new Date().toISOString());
+    
+    logAction(req.user.id, 'UPDATE', 'billing', `Actualizado certificado CSD para RFC: ${rfc}`, req.ip);
+    
     res.json(publicCertificate(db.prepare('SELECT * FROM billing_certificates WHERE rfc = ?').get(rfc)));
   } catch (error) {
     next(error);
   }
 });
 
-router.delete('/certificate', requireRole('administrador'), async (req, res, next) => {
+router.delete('/certificate', checkPermission('billing', 'd'), async (req, res, next) => {
   try {
     const rfc = normalizeRfc(req.body?.rfc || req.query.rfc || db.prepare('SELECT rfc FROM billing_issuer_settings WHERE id = 1').get()?.rfc);
     if (!rfc) return res.status(400).json({ error: 'RFC requerido' });
     await facturama.deleteCsd(rfc);
     db.prepare("UPDATE billing_certificates SET status = 'eliminado', updated_at = CURRENT_TIMESTAMP WHERE rfc = ?").run(rfc);
+    
+    logAction(req.user.id, 'DELETE', 'billing', `Eliminado certificado CSD para RFC: ${rfc}`, req.ip);
+    
     res.json({ ok: true });
   } catch (error) {
     next(error);
   }
 });
 
-router.get('/invoices', requireRole('administrador'), (req, res) => {
+router.get('/invoices', checkPermission('billing', 'r'), (req, res) => {
   res.json(db.prepare(`
     SELECT i.*, wo.folio AS work_order_folio, c.name AS customer_name,
       v.make, v.model, v.year, v.plates
@@ -164,18 +177,18 @@ router.get('/invoices', requireRole('administrador'), (req, res) => {
   `).all());
 });
 
-router.get('/invoices/:id', requireRole('administrador'), (req, res) => {
+router.get('/invoices/:id', checkPermission('billing', 'r'), (req, res) => {
   const invoice = invoiceRow(req.params.id);
   if (!invoice) return res.status(404).json({ error: 'Factura no encontrada' });
   res.json(invoice);
 });
 
-router.get('/work-orders/:id/invoice', requireRole('administrador'), (req, res) => {
+router.get('/work-orders/:id/invoice', checkPermission('billing', 'r'), (req, res) => {
   const invoice = db.prepare("SELECT * FROM invoices WHERE work_order_id = ? AND status != 'cancelada' ORDER BY id DESC").get(req.params.id);
   res.json(invoice || null);
 });
 
-router.post('/work-orders/:id/invoice', requireRole('administrador'), async (req, res, next) => {
+router.post('/work-orders/:id/invoice', checkPermission('billing', 'c'), async (req, res, next) => {
   try {
     const existing = db.prepare("SELECT * FROM invoices WHERE work_order_id = ? AND status != 'cancelada'").get(req.params.id);
     if (existing) return res.status(409).json({ error: 'La orden ya tiene una factura timbrada', invoice: existing });
@@ -199,6 +212,9 @@ router.post('/work-orders/:id/invoice', requireRole('administrador'), async (req
       JSON.stringify(response),
       req.user.id
     );
+    
+    logAction(req.user.id, 'CREATE', 'billing', `Factura timbrada Folio: ${built.internalFolio} para orden Folio: ${built.order.folio} (UUID: ${extractUuid(response)})`, req.ip);
+    
     res.status(201).json(invoiceRow(result.lastInsertRowid));
   } catch (error) {
     next(error);
@@ -219,11 +235,11 @@ async function downloadInvoiceFile(req, res, format) {
   res.send(buffer);
 }
 
-router.get('/invoices/:id/pdf', requireRole('administrador'), (req, res, next) => {
+router.get('/invoices/:id/pdf', checkPermission('billing', 'r'), (req, res, next) => {
   downloadInvoiceFile(req, res, 'pdf').catch(next);
 });
 
-router.get('/invoices/:id/xml', requireRole('administrador'), (req, res, next) => {
+router.get('/invoices/:id/xml', checkPermission('billing', 'r'), (req, res, next) => {
   downloadInvoiceFile(req, res, 'xml').catch(next);
 });
 
