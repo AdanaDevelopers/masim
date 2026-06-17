@@ -119,6 +119,10 @@ function createWhatsappTables(db) {
 }
 
 function createUserSystemTables(db) {
+  // Asegurar que las columnas existan antes de copiar los datos
+  addColumn(db, 'users', 'username', 'TEXT');
+  addColumn(db, 'users', 'permissions', 'TEXT');
+
   // Migración para soportar el rol 'personalizado' en el constraint de la tabla users
   const usersTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql || '';
   if (usersTableSql && !usersTableSql.includes('personalizado')) {
@@ -150,9 +154,6 @@ function createUserSystemTables(db) {
     }
     console.log('Migración de tabla users completada con éxito.');
   }
-
-  addColumn(db, 'users', 'username', 'TEXT');
-  addColumn(db, 'users', 'permissions', 'TEXT');
 
   // Backfill username para usuarios existentes si no tienen
   db.prepare(`
