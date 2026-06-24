@@ -89,6 +89,9 @@
         <button data-tab="reception">
           <i class="fa-solid fa-clipboard-check"></i> Registrar Recepción
         </button>
+        <button data-tab="quick-quote" class="quick-quote-nav-btn">
+          <i class="fa-solid fa-bolt" style="color: #ff9800; text-shadow: 0 0 8px rgba(255, 152, 0, 0.4);"></i> Cotización Rápida
+        </button>
         <button data-tab="customers">
           <i class="fa-solid fa-user-tie"></i> Clientes
         </button>
@@ -266,6 +269,137 @@
                     placeholder="Golpes, rayones, notas"></label>
               </div>
               <button id="rxCreateReception"><i class="fa-solid fa-folder-plus"></i> Crear recepción</button>
+            </section>
+          </div>
+        </section>
+
+        <!-- Cotización Rápida -->
+        <section id="quick-quote" class="tab card hidden">
+          <h1><i class="fa-solid fa-bolt" style="color: #ff9800;"></i> Cotización Rápida</h1>
+          <p class="muted" style="margin-bottom: 20px;">Captura datos básicos de forma rápida para generar y descargar un archivo PDF de cotización al vuelo. Ningún dato se registrará permanentemente en el sistema.</p>
+          
+          <div class="wizard-grid quick-quote-grid">
+            <!-- Bloque 1: Cliente y Vehículo -->
+            <section class="wizard-block">
+              <h2>1. Cliente y Vehículo (Opcionales)</h2>
+              <div class="form-row compact-row">
+                <label class="full-row">
+                  <span>Buscar Cliente Registrado (Sugerencias)</span>
+                  <div id="qqCustomerPickerBox" class="customer-picker">
+                    <span class="customer-search-input">
+                      <i class="fa-solid fa-magnifying-glass"></i>
+                      <input id="qqCustomerSearch" placeholder="Buscar cliente por nombre o teléfono para autocompletar..." autocomplete="off">
+                    </span>
+                    <div id="qqCustomerOptions" class="customer-options"></div>
+                  </div>
+                </label>
+              </div>
+
+              <!-- Campos editables del cliente -->
+              <div id="qqNewCustomerFields" class="new-customer-panel compact-panel">
+                <div class="subsection-title">Datos del Cliente</div>
+                <div class="form-row compact-row">
+                  <label><span>Nombre / Razón Social <small style="color:var(--brand-light);">*</small></span><input id="qqCustomerName" placeholder="Sobrenombre o nombre comercial"></label>
+                  <label><span>Teléfono / Contacto <small class="muted">(Opcional)</small></span><input id="qqCustomerPhone" placeholder="Teléfono de contacto"></label>
+                </div>
+              </div>
+
+              <div class="subsection-title" style="margin-top: 15px;">Datos del Vehículo <small class="muted">(Opcionales)</small></div>
+              <div class="form-row compact-row">
+                <label id="qqVehicleSelectRow" class="full-row hidden">
+                  <span>Seleccionar Vehículo Registrado</span>
+                  <select id="qqVehicleSelect"></select>
+                </label>
+              </div>
+
+              <div id="qqNewVehicleFields" class="new-customer-panel new-vehicle-panel compact-panel" style="margin-top: 5px;">
+                <div class="form-row compact-row">
+                  <label><span>Marca <small class="muted">(Opcional)</small></span><input id="qqVehicleMake" placeholder="Ej. Toyota"></label>
+                  <label><span>Modelo <small class="muted">(Opcional)</small></span><input id="qqVehicleModel" placeholder="Ej. Prius"></label>
+                  <label><span>Año <small class="muted">(Opcional)</small></span><input id="qqVehicleYear" type="number" placeholder="Ej. 2019"></label>
+                </div>
+                <div class="form-row compact-row">
+                  <label><span>Placas <small class="muted">(Opcional)</small></span><input id="qqVehiclePlates" placeholder="Ej. ABC-123-A"></label>
+                  <label><span>Kilometraje <small class="muted">(Opcional)</small></span><input id="qqVehicleMileage" type="number" placeholder="KM actuales"></label>
+                  <label><span>Versión <small class="muted">(Opcional)</small></span><input id="qqVehicleTrim" placeholder="Ej. Sport, Laredo"></label>
+                </div>
+              </div>
+            </section>
+
+            <!-- Bloque 2: Conceptos -->
+            <section class="wizard-block">
+              <h2>2. Conceptos de la Cotización</h2>
+              
+              <!-- Buscador de items del catálogo o creación inline -->
+              <div class="quote-add-card" style="margin-bottom: 15px; background: rgba(0, 0, 0, 0.15);">
+                <div class="quote-item-picker-grid" style="grid-template-columns: 1fr auto auto auto;">
+                  <div id="qqItemPickerBox" class="quote-item-picker">
+                    <label class="customer-search-label">
+                      <span class="customer-search-input">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input id="qqItemSearch" placeholder="Buscar concepto en el catálogo..." autocomplete="off">
+                      </span>
+                    </label>
+                    <div id="qqItemOptions" class="customer-options quote-item-options"></div>
+                  </div>
+                  <input id="qqItemQty" type="number" min="1" step="1" value="1" placeholder="Cant." style="max-width: 70px;" aria-label="Cantidad">
+                  <input id="qqItemPrice" type="number" min="0" step="0.01" placeholder="Precio" style="max-width: 110px;" aria-label="Precio" readonly>
+                  <button type="button" id="qqBtnAddItem"><i class="fa-solid fa-plus"></i></button>
+                </div>
+
+                <!-- Formulario manual para agregar concepto personalizado -->
+                <div id="qqNewItemBox" class="quote-new-item-box hidden" style="margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px;">
+                  <div class="subsection-title">Nuevo concepto personalizado</div>
+                  <div class="quote-new-item-row" style="display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 8px;">
+                    <input id="qqNewDescription" placeholder="Descripción del concepto manual">
+                    <select id="qqNewType" aria-label="Tipo de item">
+                      <option value="mano_obra">Mano de Obra</option>
+                      <option value="refaccion">Refacción / Repuesto</option>
+                    </select>
+                    <input id="qqNewPrice" type="number" min="0" step="0.01" placeholder="Precio público">
+                  </div>
+                  <label class="quote-save-catalog-check" style="margin-top: 8px;">
+                    <input id="qqSaveCatalog" type="checkbox" checked> Guardar también en el catálogo global
+                  </label>
+                </div>
+              </div>
+
+              <!-- Lista de ítems agregados temporales -->
+              <div class="quote-items-scroll" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: rgba(0,0,0,0.1);">
+                <table class="quote-items-table" style="width: 100%; border-collapse: collapse;">
+                  <thead>
+                    <tr style="border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.02);">
+                      <th style="padding: 10px; text-align: left; font-size:12px; color: var(--muted);">Concepto</th>
+                      <th style="padding: 10px; text-align: right; font-size:12px; color: var(--muted); width: 60px;">Cant.</th>
+                      <th style="padding: 10px; text-align: right; font-size:12px; color: var(--muted); width: 90px;">Precio</th>
+                      <th style="padding: 10px; text-align: right; font-size:12px; color: var(--muted); width: 100px;">Subtotal</th>
+                      <th style="padding: 10px; text-align: center; font-size:12px; color: var(--muted); width: 40px;"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="qqItemsTableBody">
+                    <!-- Conceptos agregados dinámicamente -->
+                    <tr>
+                      <td colspan="5" style="padding: 20px; text-align: center;" class="muted">No hay conceptos agregados a esta cotización rápida.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Totales -->
+              <div style="margin-top: 15px; padding: 12px 18px; background: rgba(255,255,255,0.01); border: 1px solid var(--line); border-radius: var(--r-md); display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; gap: 20px;">
+                  <div style="font-size:13px;"><span class="muted">Subtotal:</span> <strong id="qqSubtotalText">$0.00</strong></div>
+                  <div style="font-size:13px;"><span class="muted">IVA (16%):</span> <strong id="qqTaxText">$0.00</strong></div>
+                </div>
+                <div style="font-size:16px;">Total: <strong id="qqTotalText" style="color: var(--success);">$0.00</strong></div>
+              </div>
+
+              <!-- Enviar y Guardar -->
+              <div style="margin-top: 20px; display: flex; justify-content: flex-end; align-items: center; gap: 15px; flex-wrap: wrap;">
+                <button id="qqBtnSubmit" class="green-action" style="padding: 12px 24px; min-width: 220px;">
+                  <i class="fa-solid fa-file-pdf"></i> Descargar Cotización PDF
+                </button>
+              </div>
             </section>
           </div>
         </section>

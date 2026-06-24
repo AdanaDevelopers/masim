@@ -316,6 +316,8 @@ function showTab(name) {
     loadUsers().catch(() => {});
   } else if (name === 'auditLogs') {
     loadAuditLogs().catch(() => {});
+  } else if (name === 'quick-quote') {
+    initQuickQuoteForm();
   }
 }
 
@@ -3316,6 +3318,12 @@ document.addEventListener('click', (event) => {
   if (!$('quoteItemPickerBox')?.contains(event.target)) {
     $('quoteItemPickerBox')?.classList.remove('picker-open');
   }
+  if (!$('qqCustomerPickerBox')?.contains(event.target)) {
+    $('qqCustomerPickerBox')?.classList.remove('picker-open');
+  }
+  if (!$('qqItemPickerBox')?.contains(event.target)) {
+    $('qqItemPickerBox')?.classList.remove('picker-open');
+  }
 });
 $('rxCustomerType')?.addEventListener('change', updateReceptionCustomerTypeUI);
 $('rxToggleFiscal')?.addEventListener('click', () => {
@@ -3818,4 +3826,467 @@ $('auditActionFilter')?.addEventListener('change', () => loadAuditLogs().catch((
 window.openUserModal = openUserModal;
 window.deleteUser = deleteUser;
 window.openResetPasswordModal = openResetPasswordModal;
+
+// ═══════════════════════════════════
+// COTIZACIÓN RÁPIDA (QUICK QUOTE)
+// ═══════════════════════════════════
+let qqSelectedCustomerId = null;
+let qqCustomerSearch = '';
+let qqItemSearch = '';
+let qqSelectedCatalogItemId = null;
+let qqItemMode = 'catalog'; // 'catalog' o 'new'
+let quickQuoteItems = [];
+
+function initQuickQuoteForm() {
+  qqSelectedCustomerId = null;
+  qqCustomerSearch = '';
+  qqItemSearch = '';
+  qqSelectedCatalogItemId = null;
+  qqItemMode = 'catalog';
+  quickQuoteItems = [];
+
+  if ($('qqCustomerSearch')) $('qqCustomerSearch').value = '';
+  if ($('qqCustomerName')) $('qqCustomerName').value = '';
+  if ($('qqCustomerPhone')) $('qqCustomerPhone').value = '';
+  
+  if ($('qqVehicleSelectRow')) $('qqVehicleSelectRow').classList.add('hidden');
+  if ($('qqVehicleSelect')) $('qqVehicleSelect').innerHTML = '';
+
+  if ($('qqVehicleMake')) $('qqVehicleMake').value = '';
+  if ($('qqVehicleModel')) $('qqVehicleModel').value = '';
+  if ($('qqVehicleYear')) $('qqVehicleYear').value = '';
+  if ($('qqVehiclePlates')) $('qqVehiclePlates').value = '';
+  if ($('qqVehicleMileage')) $('qqVehicleMileage').value = '';
+  if ($('qqVehicleTrim')) $('qqVehicleTrim').value = '';
+
+  if ($('qqItemSearch')) $('qqItemSearch').value = '';
+  if ($('qqItemQty')) $('qqItemQty').value = '1';
+  if ($('qqItemPrice')) $('qqItemPrice').value = '';
+  if ($('qqNewDescription')) $('qqNewDescription').value = '';
+  if ($('qqNewPrice')) $('qqNewPrice').value = '';
+  if ($('qqNewType')) $('qqNewType').value = 'mano_obra';
+  if ($('qqNewItemBox')) $('qqNewItemBox').classList.add('hidden');
+
+  renderQuickQuoteItemsList();
+  bindQuickQuotePickers();
+}
+
+function bindQuickQuotePickers() {
+  const customerSearch = $('qqCustomerSearch');
+  if (customerSearch) {
+    const newSearch = customerSearch.cloneNode(true);
+    customerSearch.parentNode.replaceChild(newSearch, customerSearch);
+    
+    newSearch.addEventListener('input', () => {
+      qqCustomerSearch = newSearch.value;
+      qqSelectedCustomerId = null;
+      if ($('qqVehicleSelectRow')) $('qqVehicleSelectRow').classList.add('hidden');
+      $('qqCustomerPickerBox')?.classList.add('picker-open');
+      renderQuickQuoteCustomerPicker();
+    });
+
+    newSearch.addEventListener('focus', () => {
+      $('qqCustomerPickerBox')?.classList.add('picker-open');
+      renderQuickQuoteCustomerPicker();
+    });
+  }
+
+  // Picker de ítems
+  const itemSearch = $('qqItemSearch');
+  if (itemSearch) {
+    const newItemSearch = itemSearch.cloneNode(true);
+    itemSearch.parentNode.replaceChild(newItemSearch, itemSearch);
+
+    newItemSearch.addEventListener('input', () => {
+      qqItemSearch = newItemSearch.value;
+      qqSelectedCatalogItemId = null;
+      qqItemMode = 'catalog';
+      $('qqNewItemBox')?.classList.add('hidden');
+      $('qqItemPickerBox')?.classList.add('picker-open');
+      renderQuickQuoteItemPicker();
+    });
+
+    newItemSearch.addEventListener('focus', () => {
+      $('qqItemPickerBox')?.classList.add('picker-open');
+      renderQuickQuoteItemPicker();
+    });
+  }
+
+  // Selector de vehículos
+  const vehicleSelect = $('qqVehicleSelect');
+  if (vehicleSelect) {
+    const newSelect = vehicleSelect.cloneNode(true);
+    vehicleSelect.parentNode.replaceChild(newSelect, vehicleSelect);
+    newSelect.addEventListener('change', () => {
+      const val = newSelect.value;
+      if (val === 'new') {
+        if ($('qqVehicleMake')) $('qqVehicleMake').value = '';
+        if ($('qqVehicleModel')) $('qqVehicleModel').value = '';
+        if ($('qqVehicleYear')) $('qqVehicleYear').value = '';
+        if ($('qqVehiclePlates')) $('qqVehiclePlates').value = '';
+        if ($('qqVehicleMileage')) $('qqVehicleMileage').value = '';
+        if ($('qqVehicleTrim')) $('qqVehicleTrim').value = '';
+      } else {
+        const v = vehicles.find((item) => Number(item.id) === Number(val));
+        if (v) {
+          if ($('qqVehicleMake')) $('qqVehicleMake').value = v.make || '';
+          if ($('qqVehicleModel')) $('qqVehicleModel').value = v.model || '';
+          if ($('qqVehicleYear')) $('qqVehicleYear').value = v.year || '';
+          if ($('qqVehiclePlates')) $('qqVehiclePlates').value = v.plates || '';
+          if ($('qqVehicleMileage')) $('qqVehicleMileage').value = v.mileage || '';
+          if ($('qqVehicleTrim')) $('qqVehicleTrim').value = v.trim || '';
+        }
+      }
+    });
+  }
+
+  // Botón de agregar concepto
+  const btnAddItem = $('qqBtnAddItem');
+  if (btnAddItem) {
+    btnAddItem.onclick = () => {
+      addQuickQuoteItem();
+    };
+  }
+
+  // Botón de descargar cotización
+  const btnSubmit = $('qqBtnSubmit');
+  if (btnSubmit) {
+    btnSubmit.onclick = () => {
+      submitQuickQuote().catch(() => {});
+    };
+  }
+}
+
+function renderQuickQuoteCustomerPicker() {
+  const container = $('qqCustomerOptions');
+  if (!container) return;
+
+  const query = qqCustomerSearch.trim().toLowerCase();
+  const rows = query ? customers.filter((c) => customerSearchText(c).includes(query)) : customers;
+
+  container.innerHTML = `
+    <button type="button" class="customer-option new-customer-option ${!qqSelectedCustomerId ? 'selected' : ''}" onclick="selectQuickQuoteCustomer(null)">
+      <i class="fa-solid fa-user-plus"></i>
+      <span><strong>Texto libre (Manual)</strong><small>Escribir nombre personalizado</small></span>
+    </button>
+    ${rows.map((c) => `
+      <button type="button" class="customer-option ${c.id === qqSelectedCustomerId ? 'selected' : ''}" onclick="selectQuickQuoteCustomer(${c.id})">
+        <i class="fa-solid ${c.customer_type === 'empresa' ? 'fa-building' : 'fa-user'}"></i>
+        <span>
+          <strong>${escapeHtml(customerDisplayName(c))}</strong>
+          <small>${c.customer_type || 'particular'} · ${c.phone || c.whatsapp || 'Sin tel.'}</small>
+        </span>
+      </button>
+    `).join('') || '<div class="customer-empty">No se encontraron clientes.</div>'}
+  `;
+}
+
+function selectQuickQuoteCustomer(id) {
+  qqSelectedCustomerId = id;
+  const customer = customers.find((c) => c.id === id);
+
+  if (customer) {
+    $('qqCustomerSearch').value = customerDisplayName(customer);
+    $('qqCustomerName').value = customerDisplayName(customer);
+    $('qqCustomerPhone').value = customer.whatsapp || customer.phone || '';
+
+    // Cargar vehículos
+    const clientVehicles = vehicles.filter((v) => v.customer_id === id);
+    const select = $('qqVehicleSelect');
+    if (clientVehicles.length > 0) {
+      select.innerHTML = '<option value="">Selecciona un vehículo (Opcional)...</option>' + clientVehicles.map((v) => `
+        <option value="${v.id}">${v.plates ? v.plates + ' - ' : ''}${v.make} ${v.model} (${v.year || ''})</option>
+      `).join('') + '<option value="new">+ Escribir vehículo diferente...</option>';
+      $('qqVehicleSelectRow').classList.remove('hidden');
+    } else {
+      select.innerHTML = '<option value="new">+ Escribir vehículo nuevo...</option>';
+      $('qqVehicleSelectRow').classList.add('hidden');
+    }
+  } else {
+    $('qqCustomerSearch').value = qqCustomerSearch;
+    $('qqCustomerName').value = qqCustomerSearch;
+    $('qqCustomerPhone').value = '';
+    $('qqVehicleSelectRow').classList.add('hidden');
+  }
+
+  $('qqCustomerPickerBox')?.classList.remove('picker-open');
+}
+
+function renderQuickQuoteItemPicker() {
+  const container = $('qqItemOptions');
+  if (!container) return;
+
+  const query = qqItemSearch.trim().toLowerCase();
+  const rows = query
+    ? catalog.filter((item) => item.active !== 0 && quoteCatalogSearchText(item).includes(query))
+    : catalog.filter((item) => item.active !== 0);
+
+  container.innerHTML = `
+    <button type="button" class="customer-option new-customer-option ${qqItemMode === 'new' ? 'selected' : ''}" onclick="selectQuickQuoteCatalogItem('new')">
+      <i class="fa-solid fa-plus"></i>
+      <span><strong>Concepto Personalizado</strong><small>Escribir servicio o refacción manual</small></span>
+    </button>
+    ${rows.map((item) => `
+      <button type="button" class="customer-option ${item.id === qqSelectedCatalogItemId ? 'selected' : ''}" onclick="selectQuickQuoteCatalogItem(${item.id})">
+        <i class="fa-solid ${item.type === 'mano_obra' ? 'fa-screwdriver-wrench' : 'fa-box'}"></i>
+        <span>
+          <strong>${escapeHtml(item.description)}</strong>
+          <small>${item.type === 'mano_obra' ? 'Mano de obra' : 'Refacción'} · ${money(item.public_price)}</small>
+        </span>
+      </button>
+    `).join('') || '<div class="customer-empty">No se encontraron conceptos.</div>'}
+  `;
+}
+
+function selectQuickQuoteCatalogItem(val) {
+  if (val === 'new') {
+    qqItemMode = 'new';
+    qqSelectedCatalogItemId = null;
+    $('qqItemSearch').value = qqItemSearch;
+    $('qqItemPrice').value = '';
+    $('qqNewItemBox').classList.remove('hidden');
+    if ($('qqNewDescription')) $('qqNewDescription').value = qqItemSearch;
+    $('qqNewPrice').focus();
+  } else {
+    const item = catalog.find((i) => i.id === val);
+    if (item) {
+      qqItemMode = 'catalog';
+      qqSelectedCatalogItemId = item.id;
+      $('qqItemSearch').value = item.description;
+      $('qqItemPrice').value = Number(item.public_price || 0);
+      $('qqNewItemBox').classList.add('hidden');
+    }
+  }
+  $('qqItemPickerBox')?.classList.remove('picker-open');
+}
+
+function addQuickQuoteItem() {
+  const qty = Number($('qqItemQty').value || 1);
+  if (!Number.isInteger(qty) || qty <= 0) {
+    showToast('Alerta', 'Ingrese una cantidad válida', 'error');
+    return;
+  }
+
+  let description = '';
+  let type = '';
+  let applied_price = 0;
+  let item_id = null;
+  let save_catalog = false;
+
+  if (qqItemMode === 'new') {
+    description = $('qqNewDescription').value.trim();
+    type = $('qqNewType').value;
+    applied_price = Number($('qqNewPrice').value || 0);
+    save_catalog = $('qqSaveCatalog').checked;
+
+    if (!description) {
+      showToast('Alerta', 'Ingrese la descripción del concepto manual', 'error');
+      return;
+    }
+    if (applied_price < 0) {
+      showToast('Alerta', 'El precio no puede ser negativo', 'error');
+      return;
+    }
+
+    if (save_catalog) {
+      api('/api/catalog', {
+        method: 'POST',
+        body: JSON.stringify({
+          description,
+          type,
+          public_price: applied_price,
+          internal_cost: 0
+        })
+      }).then((newCatalogItem) => {
+        catalog.push(newCatalogItem);
+        catalog.sort((a, b) => String(a.description).localeCompare(String(b.description), 'es'));
+        renderCatalog();
+      }).catch(err => console.error("Error al guardar en catálogo:", err));
+    }
+  } else if (qqSelectedCatalogItemId) {
+    const item = catalog.find((i) => i.id === qqSelectedCatalogItemId);
+    if (item) {
+      description = item.description;
+      type = item.type;
+      applied_price = Number(item.public_price || 0);
+      item_id = item.id;
+    }
+  } else {
+    showToast('Alerta', 'Seleccione un concepto del catálogo o cree uno personalizado', 'error');
+    return;
+  }
+
+  quickQuoteItems.push({
+    item_id,
+    description,
+    type,
+    quantity: qty,
+    applied_price
+  });
+
+  // Limpiar inputs
+  $('qqItemSearch').value = '';
+  $('qqItemQty').value = '1';
+  $('qqItemPrice').value = '';
+  $('qqNewDescription').value = '';
+  $('qqNewPrice').value = '';
+  $('qqNewItemBox').classList.add('hidden');
+  qqSelectedCatalogItemId = null;
+  qqItemSearch = '';
+  qqItemMode = 'catalog';
+
+  renderQuickQuoteItemsList();
+  showToast('Concepto agregado', 'Se añadió el concepto al presupuesto.');
+}
+
+function removeQuickQuoteItem(index) {
+  quickQuoteItems.splice(index, 1);
+  renderQuickQuoteItemsList();
+}
+
+function renderQuickQuoteItemsList() {
+  const tbody = $('qqItemsTableBody');
+  if (!tbody) return;
+
+  if (quickQuoteItems.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="padding: 20px; text-align: center;" class="muted">No hay conceptos agregados a esta cotización rápida.</td>
+      </tr>
+    `;
+    $('qqSubtotalText').textContent = money(0);
+    $('qqTaxText').textContent = money(0);
+    $('qqTotalText').textContent = money(0);
+    return;
+  }
+
+  let subtotal = 0;
+  tbody.innerHTML = quickQuoteItems.map((item, idx) => {
+    const rowSubtotal = item.quantity * item.applied_price;
+    subtotal += rowSubtotal;
+    const typeLabel = item.type === 'mano_obra' ? 'Mano de Obra' : 'Refacción';
+    return `
+      <tr style="border-bottom: 1px solid var(--line);">
+        <td style="padding: 10px; text-align: left;">
+          <strong>${escapeHtml(item.description)}</strong><br>
+          <small class="muted">${typeLabel}</small>
+        </td>
+        <td style="padding: 10px; text-align: right;">${item.quantity}</td>
+        <td style="padding: 10px; text-align: right;">${money(item.applied_price)}</td>
+        <td style="padding: 10px; text-align: right;"><strong>${money(rowSubtotal)}</strong></td>
+        <td style="padding: 10px; text-align: center;">
+          <button type="button" class="qq-delete-item-btn" onclick="removeQuickQuoteItem(${idx})" aria-label="Eliminar concepto">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const tax = subtotal * 0.16; // 16% IVA por defecto
+  const total = subtotal + tax;
+
+  $('qqSubtotalText').textContent = money(subtotal);
+  $('qqTaxText').textContent = money(tax);
+  $('qqTotalText').textContent = money(total);
+}
+
+async function submitQuickQuote() {
+  const btn = $('qqBtnSubmit');
+  if (!btn) return;
+
+  const customerName = $('qqCustomerName')?.value.trim();
+  const customerContact = $('qqCustomerPhone')?.value.trim();
+
+  if (!customerName) {
+    showToast('Alerta', 'Ingrese el nombre del cliente', 'error');
+    return;
+  }
+
+  // Los campos de vehículo no son obligatorios
+  const vehicleMake = $('qqVehicleMake')?.value.trim() || null;
+  const vehicleModel = $('qqVehicleModel')?.value.trim() || null;
+  const vehicleYearVal = $('qqVehicleYear')?.value.trim();
+  const vehicleYear = vehicleYearVal ? Number(vehicleYearVal) : null;
+  const vehiclePlates = $('qqVehiclePlates')?.value.trim() || null;
+  const vehicleMileageVal = $('qqVehicleMileage')?.value.trim();
+  const vehicleMileage = vehicleMileageVal ? Number(vehicleMileageVal) : null;
+  const vehicleTrim = $('qqVehicleTrim')?.value.trim() || null;
+
+  if (quickQuoteItems.length === 0) {
+    showToast('Alerta', 'Agregue al menos un concepto a la cotización', 'error');
+    return;
+  }
+
+  const payload = {
+    customer_name: customerName,
+    customer_contact: customerContact || null,
+    vehicle: {
+      make: vehicleMake,
+      model: vehicleModel,
+      year: vehicleYear,
+      plates: vehiclePlates,
+      mileage: vehicleMileage,
+      trim: vehicleTrim
+    },
+    items: quickQuoteItems.map((item) => ({
+      quantity: item.quantity,
+      description: item.description,
+      type: item.type,
+      applied_price: item.applied_price,
+      notes: null
+    }))
+  };
+
+  btn.disabled = true;
+  const origHtml = btn.innerHTML;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Generando PDF...';
+
+  try {
+    const res = await fetch('/api/pdf/quick-quote-direct', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      let message = 'No se pudo generar la cotización';
+      try {
+        const data = await res.json();
+        message = data.error || message;
+      } catch (error) {}
+      throw new Error(message);
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizedName = customerName.replace(/[^a-zA-Z0-9]/g, '_');
+    link.download = `${sanitizedName}-cotizacion.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast('Descargado', 'Cotización generada y descargada con éxito.', 'success');
+  } catch (err) {
+    showToast('Error', err.message, 'error');
+    console.error('Error al generar cotización rápida:', err);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+  }
+}
+
+// Exponer funciones globales requeridas por elementos de cotización rápida
+window.selectQuickQuoteCustomer = selectQuickQuoteCustomer;
+window.selectQuickQuoteCatalogItem = selectQuickQuoteCatalogItem;
+window.removeQuickQuoteItem = removeQuickQuoteItem;
+window.initQuickQuoteForm = initQuickQuoteForm;
+window.addQuickQuoteItem = addQuickQuoteItem;
+
 

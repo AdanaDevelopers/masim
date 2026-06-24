@@ -4114,3 +4114,45 @@ tbody tr:nth-child(even):hover {
   display: flex;
   gap: 8px;
 }
+
+/* ==========================================
+   COTIZACIÓN RÁPIDA
+   ========================================== */
+.quick-quote-nav-btn i {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.quick-quote-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .quick-quote-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compact-panel {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid var(--line-light);
+  border-radius: var(--r-md);
+  margin-top: 8px;
+}
+
+.qq-delete-item-btn {
+  background: transparent !important;
+  color: var(--danger) !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 4px 8px !important;
+  cursor: pointer;
+}
+
+.qq-delete-item-btn:hover {
+  color: var(--brand-light) !important;
+  background: rgba(239, 68, 68, 0.1) !important;
+}
